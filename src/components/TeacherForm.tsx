@@ -9,7 +9,7 @@ import {
   parseBonusNumber
 } from '../types';
 import { validateIsraeliId } from '../lib/idValidator';
-import { createSubmission } from '../lib/firebase';
+import { createSubmission, updateSubmission, findSubmissionsByTeacherId } from '../lib/firebase';
 import { OfficialDocumentView } from './OfficialDocumentView';
 import { generateWordDocx } from '../lib/generateDocx';
 import { 
@@ -27,7 +27,14 @@ import {
   User,
   CreditCard,
   PenTool,
-  Info
+  Info,
+  Search,
+  Edit3,
+  X,
+  ChevronDown,
+  ChevronUp,
+  Save,
+  History
 } from 'lucide-react';
 
 export const TeacherForm: React.FC = () => {
@@ -39,6 +46,14 @@ export const TeacherForm: React.FC = () => {
   const [schoolYear, setSchoolYear] = useState('תשפ"ז (2026-2027)');
   const [teacherSignature, setTeacherSignature] = useState('');
   const [signatureMode, setSignatureMode] = useState<'text' | 'draw'>('draw');
+
+  // Existing submission editing state (e.g. correcting a questionnaire code)
+  const [editingSubmissionId, setEditingSubmissionId] = useState<string | null>(null);
+  const [isLookupOpen, setIsLookupOpen] = useState(false);
+  const [lookupIdInput, setLookupIdInput] = useState('');
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [lookupResults, setLookupResults] = useState<TeacherSubmission[] | null>(null);
+  const [lookupMessage, setLookupMessage] = useState<string | null>(null);
 
   // Canvas ref for drawing signature on mobile touchscreens and desktop
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -204,8 +219,82 @@ export const TeacherForm: React.FC = () => {
     setTeacherSignature('');
   };
 
+  // Helper functions for loading and updating existing submissions (e.g. fixing questionnaire codes)
+  const handleLoadSubmissionForEditing = (sub: TeacherSubmission) => {
+    if (!sub.id) return;
+    setEditingSubmissionId(sub.id);
+    setTeacherName(sub.teacherName || '');
+    setTeacherId(sub.teacherId || '');
+    setSubmissionDate(sub.submissionDate || new Date().toISOString().split('T')[0]);
+    setSchoolYear(sub.schoolYear || 'תשפ"ז (2026-2027)');
+    if (sub.rows && sub.rows.length > 0) {
+      setRows(sub.rows.map((r, i) => ({ ...EMPTY_ROW, ...r, rowNum: i + 1 })));
+    }
+    if (sub.teacherSignature) {
+      setTeacherSignature(sub.teacherSignature);
+      if (sub.teacherSignature.startsWith('data:image')) {
+        setSignatureMode('draw');
+        setHasDrawnSignature(true);
+        setTimeout(() => {
+          const canvas = canvasRef.current;
+          if (canvas) {
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              const img = new Image();
+              img.onload = () => {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0);
+              };
+              img.src = sub.teacherSignature!;
+            }
+          }
+        }, 100);
+      } else {
+        setSignatureMode('text');
+      }
+    }
+    setIsLookupOpen(false);
+    setActiveTab('edit');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handleCancelEditing = () => {
+    setEditingSubmissionId(null);
+    setTeacherName('');
+    setTeacherId('');
+    setTeacherSignature('');
+    setRows([{ rowNum: 1, ...EMPTY_ROW }]);
+    clearCanvas();
+  };
+
+  const handleSearchExistingSubmission = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanId = lookupIdInput.trim();
+    if (!cleanId) {
+      setLookupMessage('נא להזין מספר תעודת זהות');
+      return;
+    }
+    setLookupLoading(true);
+    setLookupMessage(null);
+    setLookupResults(null);
+    try {
+      const results = await findSubmissionsByTeacherId(cleanId);
+      if (results.length === 0) {
+        setLookupMessage('לא נמצאו טפסים שהוגשו עבור מספר תעודת זהות זו במערכת.');
+      } else {
+        setLookupResults(results);
+      }
+    } catch (err) {
+      console.error('Lookup error:', err);
+      setLookupMessage('אירעה שגיאה באיתור הטופס. אנא נסה שנית.');
+    } finally {
+      setLookupLoading(false);
+    }
+  };
+
   // Build current submission object
   const currentSubmission: TeacherSubmission = {
+    id: editingSubmissionId || undefined,
     teacherName: teacherName.trim(),
     teacherId: teacherId.trim(),
     submissionDate,
@@ -255,8 +344,14 @@ export const TeacherForm: React.FC = () => {
         createdAt: new Date().toISOString(),
       };
 
-      const docId = await createSubmission(submissionPayload);
-      setSubmittedData({ ...submissionPayload, id: docId });
+      if (editingSubmissionId) {
+        // Update the existing submission document directly without creating duplicates
+        await updateSubmission(editingSubmissionId, submissionPayload);
+        setSubmittedData({ ...submissionPayload, id: editingSubmissionId });
+      } else {
+        const docId = await createSubmission(submissionPayload);
+        setSubmittedData({ ...submissionPayload, id: docId });
+      }
     } catch (err: any) {
       console.error('Error submitting form:', err);
       setErrorMsg(
@@ -324,6 +419,17 @@ export const TeacherForm: React.FC = () => {
 
           <div className="flex flex-wrap items-center justify-center gap-4">
             <button
+              onClick={() => {
+                setEditingSubmissionId(submittedData.id || null);
+                setSubmittedData(null);
+                setActiveTab('edit');
+              }}
+              className="px-6 py-3 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl shadow-md flex items-center gap-2 transition cursor-pointer"
+            >
+              <Edit3 className="w-5 h-5" />
+              נפלה טעות? חזור לעריכה ותיקון שאלונים
+            </button>
+            <button
               onClick={handlePrint}
               className="px-6 py-3 bg-sky-700 hover:bg-sky-800 text-white font-medium rounded-xl shadow-md flex items-center gap-2 transition cursor-pointer"
             >
@@ -340,15 +446,7 @@ export const TeacherForm: React.FC = () => {
             <button
               onClick={() => {
                 setSubmittedData(null);
-                setTeacherName('');
-                setTeacherId('');
-                setTeacherSignature('');
-                setRows([
-                  {
-                    rowNum: 1,
-                    ...EMPTY_ROW,
-                  },
-                ]);
+                handleCancelEditing();
               }}
               className="px-5 py-3 border border-gray-300 hover:bg-gray-100 text-gray-700 font-medium rounded-xl transition cursor-pointer"
             >
@@ -413,6 +511,172 @@ export const TeacherForm: React.FC = () => {
             </button>
           </div>
         </div>
+      </div>
+
+      {/* Lookup / Edit existing submission section - DIRECTLY VISIBLE FOR TEACHERS */}
+      <div id="teacher-lookup-section" className="no-print mb-8 scroll-mt-20">
+        {editingSubmissionId ? (
+          <div className="bg-gradient-to-l from-amber-50 to-orange-50 border-2 border-amber-400 rounded-2xl p-5 md:p-6 shadow-md flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-start gap-3.5">
+              <div className="w-12 h-12 bg-amber-200 text-amber-900 rounded-2xl flex items-center justify-center shrink-0 shadow-xs">
+                <Edit3 className="w-6 h-6" />
+              </div>
+              <div>
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-300/80 text-amber-950 text-xs font-black mb-1.5 shadow-2xs">
+                  ✏️ מצב עריכה ותיקון פעיל
+                </div>
+                <h4 className="text-base md:text-lg font-black text-amber-950">
+                  הנך עורך כעת את הטופס הקיים של: {teacherName || 'מורה'} (ת.ז. {teacherId})
+                </h4>
+                <p className="text-xs md:text-sm text-amber-900 mt-1 leading-relaxed">
+                  באפשרותך לתקן סמל שאלון, מקצוע, כמות תלמידים או אחוזי גמול. בעת לחיצה על "שמירה והגשה", הטופס הקיים בענן יתעדכן ישירות ללא יצירת כפילויות.
+                </p>
+                <div className="text-[11px] font-mono text-amber-800 mt-1">
+                  אסמכתא: {editingSubmissionId}
+                </div>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={handleCancelEditing}
+              className="px-5 py-2.5 bg-white hover:bg-amber-100 border-2 border-amber-300 text-amber-950 rounded-xl text-xs md:text-sm font-bold transition flex items-center gap-2 cursor-pointer shadow-xs shrink-0 self-stretch md:self-auto justify-center"
+            >
+              <RotateCcw className="w-4 h-4 text-amber-800" />
+              ביטול עריכה ומילוי טופס חדש
+            </button>
+          </div>
+        ) : (
+          <div className="bg-white rounded-2xl border-2 border-sky-400 shadow-md overflow-hidden">
+            {/* Header banner of lookup card */}
+            <div className="bg-gradient-to-l from-sky-100 via-sky-50 to-blue-50 px-5 py-4 border-b border-sky-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-right">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-sky-700 text-white flex items-center justify-center shadow-xs shrink-0">
+                  <Search className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm md:text-base font-black text-sky-950">
+                      הגשת כבר טופס וברצונך לתקן טעות (סמל שאלון, שעות או מקצוע)?
+                    </span>
+                    <span className="bg-amber-500 text-white text-[11px] font-black px-2 py-0.5 rounded-full shadow-2xs">
+                      איתור לפי ת.ז.
+                    </span>
+                  </div>
+                  <p className="text-xs text-sky-800 mt-0.5 font-medium">
+                    הזן את מספר תעודת הזהות שלך בשדה למטה, והמערכת תטען את הטופס שכבר מילאת לעריכה מיידית:
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Direct input and search button */}
+            <div className="p-5 md:p-6 bg-white">
+              <form onSubmit={handleSearchExistingSubmission} className="flex flex-col sm:flex-row items-center gap-3">
+                <div className="relative flex-1 w-full">
+                  <input
+                    id="teacher-lookup-input"
+                    type="text"
+                    maxLength={9}
+                    value={lookupIdInput}
+                    onChange={(e) => setLookupIdInput(e.target.value.replace(/\D/g, ''))}
+                    placeholder="הקלד כאן מספר תעודת זהות (7 עד 9 ספרות)..."
+                    className="w-full px-4 py-3 rounded-xl border-2 border-gray-300 focus:border-sky-600 focus:ring-2 focus:ring-sky-200 text-sm md:text-base font-mono tracking-wider bg-gray-50/50 focus:bg-white text-gray-900 placeholder:text-gray-400 placeholder:font-sans placeholder:tracking-normal font-bold transition"
+                  />
+                  {lookupIdInput && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setLookupIdInput('');
+                        setLookupResults(null);
+                        setLookupMessage(null);
+                      }}
+                      className="absolute left-3 top-3.5 text-gray-400 hover:text-gray-700 p-1"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                <button
+                  type="submit"
+                  disabled={lookupLoading || !lookupIdInput.trim()}
+                  className="w-full sm:w-auto px-6 py-3 bg-sky-700 hover:bg-sky-800 disabled:opacity-50 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow-md hover:shadow-lg shrink-0"
+                >
+                  {lookupLoading ? (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  ) : (
+                    <Search className="w-4 h-4" />
+                  )}
+                  חפש טפסים שלי לעדכון
+                </button>
+              </form>
+
+              {lookupMessage && (
+                <div className="mt-4 p-3.5 bg-amber-50 border border-amber-300 rounded-xl text-xs md:text-sm text-amber-900 font-semibold flex items-center gap-2 animate-fade-in">
+                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                  <span>{lookupMessage}</span>
+                </div>
+              )}
+
+              {lookupResults && lookupResults.length > 0 && (
+                <div className="space-y-3 mt-4 pt-4 border-t border-gray-100 animate-fade-in">
+                  <div className="text-xs md:text-sm font-bold text-gray-800 flex items-center justify-between">
+                    <span>נמצאו {lookupResults.length} טפסים עבור תעודת זהות {lookupIdInput}:</span>
+                    <span className="text-[11px] text-gray-500 font-normal">בחר טופס לטעינה ועריכה</span>
+                  </div>
+                  {lookupResults.map((res) => (
+                    <div
+                      key={res.id}
+                      className="p-4 rounded-xl border-2 border-sky-100 hover:border-sky-400 bg-sky-50/30 flex flex-col md:flex-row md:items-center justify-between gap-4 transition shadow-xs"
+                    >
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-extrabold text-gray-900 text-sm md:text-base">
+                            {res.teacherName}
+                          </span>
+                          <span className="text-xs bg-sky-100 text-sky-800 px-2 py-0.5 rounded font-mono font-bold">
+                            ת.ז. {res.teacherId}
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            תאריך הגשה: <strong>{res.submissionDate}</strong>
+                          </span>
+                          <span className="text-xs text-gray-500">
+                            שנה"ל: {res.schoolYear}
+                          </span>
+                        </div>
+                        <div className="text-xs text-gray-700 flex flex-wrap items-center gap-2">
+                          <span className="font-bold text-gray-800">שאלונים שדווחו בטופס זה:</span>
+                          {res.rows && res.rows.length > 0 ? (
+                            res.rows
+                              .filter((r) => r.questionnaireCode || r.subject)
+                              .map((r, idx) => (
+                                <span
+                                  key={idx}
+                                  className="bg-white border border-gray-300 px-2.5 py-0.5 rounded text-[11px] text-sky-900 font-mono font-bold shadow-2xs"
+                                >
+                                  {r.subject || 'שאלון'} (סמל: {r.questionnaireCode || 'ללא'})
+                                </span>
+                              ))
+                          ) : (
+                            <span className="text-gray-400">אין שורות שדווחו</span>
+                          )}
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleLoadSubmissionForEditing(res)}
+                        className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow-md hover:shadow-lg shrink-0"
+                      >
+                        <Edit3 className="w-4 h-4" />
+                        טען וערוך טופס זה
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
 
       {activeTab === 'preview' ? (
@@ -522,6 +786,40 @@ export const TeacherForm: React.FC = () => {
                   <p className="text-rose-600 text-[11px] mt-1">
                     ספרת ביקורת אינה תקינה לפי ת.ז. ישראלית
                   </p>
+                )}
+
+                {/* Direct helper to load existing form if teacher already submitted */}
+                {!editingSubmissionId && teacherId.length >= 7 && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      setLookupIdInput(teacherId);
+                      setLookupLoading(true);
+                      setLookupMessage(null);
+                      setLookupResults(null);
+                      const el = document.getElementById('teacher-lookup-section');
+                      if (el) el.scrollIntoView({ behavior: 'smooth' });
+                      try {
+                        const results = await findSubmissionsByTeacherId(teacherId);
+                        if (results.length === 0) {
+                          setLookupMessage(`לא נמצאו טפסים קודמים עבור ת.ז. ${teacherId} במערכת.`);
+                        } else {
+                          setLookupResults(results);
+                        }
+                      } catch (err) {
+                        setLookupMessage('אירעה שגיאה בחיפוש.');
+                      } finally {
+                        setLookupLoading(false);
+                      }
+                    }}
+                    className="mt-2 text-xs text-sky-800 bg-sky-50 hover:bg-sky-100 border border-sky-300 rounded-lg p-2 font-bold flex items-center justify-between gap-1 transition cursor-pointer w-full"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Search className="w-3.5 h-3.5 text-sky-600 shrink-0" />
+                      <span>הגשת כבר טופס עם ת.ז. זו?</span>
+                    </span>
+                    <span className="underline text-sky-700">לחץ לאיתור וטעינה לעריכה</span>
+                  </button>
                 )}
               </div>
 
@@ -1075,17 +1373,21 @@ export const TeacherForm: React.FC = () => {
             <button
               type="submit"
               disabled={isSubmitting}
-              className="w-full sm:w-auto px-10 py-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-400 text-white font-extrabold text-base rounded-xl shadow-lg hover:shadow-xl transition transform active:scale-98 flex items-center justify-center gap-3 cursor-pointer"
+              className={`w-full sm:w-auto px-10 py-4 ${
+                editingSubmissionId
+                  ? 'bg-amber-600 hover:bg-amber-700'
+                  : 'bg-emerald-600 hover:bg-emerald-700'
+              } disabled:bg-gray-400 text-white font-extrabold text-base rounded-xl shadow-lg hover:shadow-xl transition transform active:scale-98 flex items-center justify-center gap-3 cursor-pointer`}
             >
               {isSubmitting ? (
                 <>
                   <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  שומר בענן ושולח...
+                  {editingSubmissionId ? 'מעדכן שינויים בענן...' : 'שומר בענן ושולח...'}
                 </>
               ) : (
                 <>
-                  <CheckCircle2 className="w-6 h-6" />
-                  שלח טופס למערכת בית הספר
+                  {editingSubmissionId ? <Save className="w-6 h-6" /> : <CheckCircle2 className="w-6 h-6" />}
+                  {editingSubmissionId ? 'שמור ועדכן שינויים בטופס' : 'שלח טופס למערכת בית הספר'}
                 </>
               )}
             </button>

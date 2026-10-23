@@ -1,10 +1,18 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { TeacherSubmission, calculateRowEligiblePercent } from '../types';
+import { 
+  TeacherSubmission, 
+  calculateRowEligiblePercent,
+  FormRow,
+  COMMON_SUBJECTS,
+  EMPTY_ROW,
+  SCHOOL_YEARS
+} from '../types';
 import { 
   getAllSubmissions, 
   subscribeToSubmissions,
   updateSubmissionApproval, 
   updateSubmissionSignature,
+  updateSubmission,
   deleteSubmission 
 } from '../lib/firebase';
 import { OfficialDocumentView } from './OfficialDocumentView';
@@ -33,7 +41,10 @@ import {
   ChevronRight,
   Radio,
   PenTool,
-  RotateCcw
+  RotateCcw,
+  Edit3,
+  Save,
+  Plus
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -53,6 +64,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, adminE
   const [principalSignInput, setPrincipalSignInput] = useState('מורשה שכר - עירייה');
   const [isBatchPrinting, setIsBatchPrinting] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+
+  // Admin editing state (for correcting questionnaire codes, subjects, etc.)
+  const [editingSubmissionAdmin, setEditingSubmissionAdmin] = useState<TeacherSubmission | null>(null);
+  const [adminEditRows, setAdminEditRows] = useState<FormRow[]>([]);
+  const [adminEditName, setAdminEditName] = useState('');
+  const [adminEditId, setAdminEditId] = useState('');
+  const [adminEditDate, setAdminEditDate] = useState('');
+  const [adminEditYear, setAdminEditYear] = useState('');
+  const [isSavingAdminEdit, setIsSavingAdminEdit] = useState(false);
 
   // Teacher signature pad modal state
   const [signingSubmission, setSigningSubmission] = useState<TeacherSubmission | null>(null);
@@ -144,6 +164,88 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, adminE
     } catch (err) {
       console.error('Failed to update signature:', err);
       alert('שגיאה בשמירת החתימה');
+    }
+  };
+
+  const handleOpenAdminEdit = (sub: TeacherSubmission) => {
+    setEditingSubmissionAdmin(sub);
+    setAdminEditName(sub.teacherName || '');
+    setAdminEditId(sub.teacherId || '');
+    setAdminEditDate(sub.submissionDate || '');
+    setAdminEditYear(sub.schoolYear || 'תשפ"ז (2026-2027)');
+    setAdminEditRows(
+      sub.rows && sub.rows.length > 0
+        ? sub.rows.map((r, i) => ({ ...EMPTY_ROW, ...r, rowNum: i + 1 }))
+        : [{ rowNum: 1, ...EMPTY_ROW }]
+    );
+  };
+
+  const handleAdminRowChange = (index: number, field: keyof FormRow, value: string) => {
+    setAdminEditRows((prev) => {
+      const updated = [...prev];
+      const target = { ...updated[index], [field]: value };
+      if (
+        field === 'externalExamBonus' ||
+        field === 'schoolExamBonus' ||
+        field === 'projectBonus' ||
+        field === 'unitsCount' ||
+        field === 'outOfUnits'
+      ) {
+        target.eligibleBonusPercent = calculateRowEligiblePercent(target);
+      }
+      updated[index] = target;
+      return updated;
+    });
+  };
+
+  const handleAdminAddRow = () => {
+    setAdminEditRows((prev) => [
+      ...prev,
+      { rowNum: prev.length + 1, ...EMPTY_ROW }
+    ]);
+  };
+
+  const handleAdminRemoveRow = (index: number) => {
+    if (adminEditRows.length <= 1) {
+      setAdminEditRows([{ rowNum: 1, ...EMPTY_ROW }]);
+      return;
+    }
+    setAdminEditRows((prev) => {
+      const filtered = prev.filter((_, i) => i !== index);
+      return filtered.map((r, i) => ({ ...r, rowNum: i + 1 }));
+    });
+  };
+
+  const handleSaveAdminEdit = async () => {
+    if (!editingSubmissionAdmin || !editingSubmissionAdmin.id) return;
+    setIsSavingAdminEdit(true);
+    try {
+      const updatedPayload: Partial<TeacherSubmission> = {
+        teacherName: adminEditName.trim(),
+        teacherId: adminEditId.trim(),
+        submissionDate: adminEditDate,
+        schoolYear: adminEditYear,
+        rows: adminEditRows,
+      };
+
+      await updateSubmission(editingSubmissionAdmin.id, updatedPayload);
+
+      setSubmissions((prev) =>
+        prev.map((s) =>
+          s.id === editingSubmissionAdmin.id ? { ...s, ...updatedPayload } : s
+        )
+      );
+
+      if (selectedSubmission?.id === editingSubmissionAdmin.id) {
+        setSelectedSubmission((prev) => (prev ? { ...prev, ...updatedPayload } : null));
+      }
+
+      setEditingSubmissionAdmin(null);
+    } catch (err) {
+      console.error('Error saving admin edits:', err);
+      alert('אירעה שגיאה בשמירת השינויים.');
+    } finally {
+      setIsSavingAdminEdit(false);
     }
   };
 
@@ -677,6 +779,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, adminE
                             <Eye className="w-4 h-4" />
                           </button>
 
+                          {/* Edit Details & Questionnaires */}
+                          <button
+                            onClick={() => handleOpenAdminEdit(sub)}
+                            className="p-1.5 text-amber-600 hover:text-amber-800 hover:bg-amber-50 rounded-lg transition cursor-pointer"
+                            title="ערוך פרטי טופס / תקן סמל שאלון"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                          </button>
+
                           {/* Hand-drawn touch signature button */}
                           <button
                             onClick={() => {
@@ -760,6 +871,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, adminE
               </div>
 
               <div className="flex items-center gap-3">
+                <button
+                  onClick={() => handleOpenAdminEdit(selectedSubmission)}
+                  className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 text-xs font-bold rounded-lg flex items-center gap-1.5 transition cursor-pointer"
+                  title="ערוך שאלונים ופרטי מורה / תקן סמל שאלון"
+                >
+                  <Edit3 className="w-3.5 h-3.5 text-amber-700" />
+                  <span>ערוך שאלונים</span>
+                </button>
+
                 <button
                   onClick={() => {
                     setSigningSubmission(selectedSubmission);
@@ -986,6 +1106,277 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, adminE
                 className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition cursor-pointer shadow-sm"
               >
                 שמור חתימה בטופס
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ADMIN EDIT MODAL (FOR DIRECTLY FIXING QUESTIONNAIRE CODES OR TEACHER DETAILS) */}
+      {editingSubmissionAdmin && (
+        <div className="fixed inset-0 bg-black/60 z-50 overflow-y-auto flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-5xl w-full max-h-[92vh] overflow-y-auto shadow-2xl relative animate-scale-up">
+            {/* Modal Header */}
+            <div className="sticky top-0 bg-white border-b px-6 py-4 flex items-center justify-between z-10">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-amber-100 text-amber-800 rounded-xl flex items-center justify-center font-bold">
+                  <Edit3 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-gray-900 text-base">
+                    עריכת פרטי שאלונים ומורה (תיקון סמלי שאלון)
+                  </h3>
+                  <p className="text-xs text-gray-500">
+                    מורה: {editingSubmissionAdmin.teacherName} | אסמכתא: {editingSubmissionAdmin.id}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setEditingSubmissionAdmin(null)}
+                className="p-2 text-gray-400 hover:text-gray-700 rounded-lg hover:bg-gray-100 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-6">
+              {/* Teacher Info Inputs */}
+              <div className="bg-gray-50/70 p-4 rounded-xl border border-gray-200">
+                <h4 className="text-xs font-bold text-gray-700 mb-3">פרטי מורה והגשה</h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">שם המורה</label>
+                    <input
+                      type="text"
+                      value={adminEditName}
+                      onChange={(e) => setAdminEditName(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg text-xs font-semibold bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">תעודת זהות</label>
+                    <input
+                      type="text"
+                      maxLength={9}
+                      value={adminEditId}
+                      onChange={(e) => setAdminEditId(e.target.value.replace(/\D/g, ''))}
+                      className="w-full px-3 py-2 border rounded-lg text-xs font-mono font-semibold bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">תאריך הגשה</label>
+                    <input
+                      type="date"
+                      value={adminEditDate}
+                      onChange={(e) => setAdminEditDate(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg text-xs bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1">שנת לימודים</label>
+                    <select
+                      value={adminEditYear}
+                      onChange={(e) => setAdminEditYear(e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg text-xs bg-white font-semibold"
+                    >
+                      {SCHOOL_YEARS.map((yr) => (
+                        <option key={yr} value={yr}>{yr}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Rows / Questionnaires Table */}
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <div>
+                    <h4 className="text-xs md:text-sm font-bold text-gray-900">
+                      שאלוני בגרות (תיקון סמלי שאלון ואחוזי גמול)
+                    </h4>
+                    <p className="text-[11px] text-gray-500">
+                      שים לב במיוחד לעמודת "סמל שאלון" – ניתן לתקן כל שאלון ישירות.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAdminAddRow}
+                    className="px-3 py-1.5 bg-sky-50 text-sky-800 hover:bg-sky-100 border border-sky-300 rounded-lg text-xs font-bold flex items-center gap-1 transition cursor-pointer"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    הוסף שורת שאלון
+                  </button>
+                </div>
+
+                <div className="overflow-x-auto border border-gray-200 rounded-xl">
+                  <table className="w-full text-right text-xs">
+                    <thead className="bg-sky-50 text-sky-950 font-bold border-b border-sky-200">
+                      <tr>
+                        <th className="p-2.5 w-8 text-center">#</th>
+                        <th className="p-2.5 min-w-[130px] text-amber-900 bg-amber-50/80">סמל שאלון ✏️</th>
+                        <th className="p-2.5 min-w-[140px]">מקצוע</th>
+                        <th className="p-2.5 min-w-[100px]">כיתה/קבוצה</th>
+                        <th className="p-2.5 w-20 text-center">תלמידים</th>
+                        <th className="p-2.5 w-16 text-center">יח"ל</th>
+                        <th className="p-2.5 w-16 text-center">מתוך</th>
+                        <th className="p-2.5 w-20 text-center">בחינה 70%</th>
+                        <th className="p-2.5 w-20 text-center">בחינה 30%</th>
+                        <th className="p-2.5 w-20 text-center">פרויקט %</th>
+                        <th className="p-2.5 w-20 text-center font-black">זכאי %</th>
+                        <th className="p-2.5 w-12 text-center">מחיקה</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-200 bg-white">
+                      {adminEditRows.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-gray-50/70">
+                          <td className="p-2 text-center font-bold text-gray-500">{idx + 1}</td>
+                          {/* Questionnaire Code Input */}
+                          <td className="p-2 bg-amber-50/40">
+                            <input
+                              type="text"
+                              value={row.questionnaireCode}
+                              onChange={(e) => handleAdminRowChange(idx, 'questionnaireCode', e.target.value)}
+                              placeholder="סמל שאלון"
+                              className="w-full px-2 py-1.5 border border-amber-300 rounded font-mono font-bold text-amber-950 bg-white focus:ring-2 focus:ring-amber-500 text-xs"
+                            />
+                          </td>
+                          {/* Subject */}
+                          <td className="p-2">
+                            <input
+                              type="text"
+                              list={`subjects_list_${idx}`}
+                              value={row.subject}
+                              onChange={(e) => handleAdminRowChange(idx, 'subject', e.target.value)}
+                              placeholder="בחר או הקלד מקצוע"
+                              className="w-full px-2 py-1.5 border rounded text-xs bg-white"
+                            />
+                            <datalist id={`subjects_list_${idx}`}>
+                              {COMMON_SUBJECTS.map((s) => (
+                                <option key={s} value={s} />
+                              ))}
+                            </datalist>
+                          </td>
+                          {/* Grade / Group */}
+                          <td className="p-2">
+                            <input
+                              type="text"
+                              value={row.gradeGroup}
+                              onChange={(e) => handleAdminRowChange(idx, 'gradeGroup', e.target.value)}
+                              placeholder="למשל יא1"
+                              className="w-full px-2 py-1.5 border rounded text-xs"
+                            />
+                          </td>
+                          {/* Students Count */}
+                          <td className="p-2">
+                            <input
+                              type="text"
+                              value={row.studentsCount}
+                              onChange={(e) => handleAdminRowChange(idx, 'studentsCount', e.target.value.replace(/\D/g, ''))}
+                              className="w-full px-1.5 py-1.5 border rounded text-center text-xs"
+                            />
+                          </td>
+                          {/* Units count */}
+                          <td className="p-2">
+                            <input
+                              type="text"
+                              value={row.unitsCount}
+                              onChange={(e) => handleAdminRowChange(idx, 'unitsCount', e.target.value)}
+                              className="w-full px-1.5 py-1.5 border rounded text-center text-xs"
+                            />
+                          </td>
+                          {/* Out of units */}
+                          <td className="p-2">
+                            <input
+                              type="text"
+                              value={row.outOfUnits}
+                              onChange={(e) => handleAdminRowChange(idx, 'outOfUnits', e.target.value)}
+                              className="w-full px-1.5 py-1.5 border rounded text-center text-xs"
+                            />
+                          </td>
+                          {/* 70% */}
+                          <td className="p-2">
+                            <input
+                              type="text"
+                              value={row.externalExamBonus}
+                              onChange={(e) => handleAdminRowChange(idx, 'externalExamBonus', e.target.value)}
+                              className="w-full px-1 py-1.5 border rounded text-center text-xs"
+                              placeholder="%"
+                            />
+                          </td>
+                          {/* 30% */}
+                          <td className="p-2">
+                            <input
+                              type="text"
+                              value={row.schoolExamBonus}
+                              onChange={(e) => handleAdminRowChange(idx, 'schoolExamBonus', e.target.value)}
+                              className="w-full px-1 py-1.5 border rounded text-center text-xs"
+                              placeholder="%"
+                            />
+                          </td>
+                          {/* Project */}
+                          <td className="p-2">
+                            <input
+                              type="text"
+                              value={row.projectBonus}
+                              onChange={(e) => handleAdminRowChange(idx, 'projectBonus', e.target.value)}
+                              className="w-full px-1 py-1.5 border rounded text-center text-xs"
+                              placeholder="%"
+                            />
+                          </td>
+                          {/* Eligible Percent */}
+                          <td className="p-2 text-center font-bold text-sky-900 bg-sky-50/50">
+                            <input
+                              type="text"
+                              value={row.eligibleBonusPercent}
+                              onChange={(e) => handleAdminRowChange(idx, 'eligibleBonusPercent', e.target.value)}
+                              className="w-full px-1 py-1.5 border rounded text-center text-xs font-bold"
+                              placeholder="%"
+                            />
+                          </td>
+                          {/* Remove button */}
+                          <td className="p-2 text-center">
+                            <button
+                              type="button"
+                              onClick={() => handleAdminRemoveRow(idx)}
+                              className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded cursor-pointer"
+                              title="מחק שורה זו"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="sticky bottom-0 bg-gray-50 border-t px-6 py-4 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setEditingSubmissionAdmin(null)}
+                className="px-4 py-2 border border-gray-300 rounded-xl text-xs font-semibold text-gray-700 hover:bg-gray-100 cursor-pointer"
+              >
+                ביטול ללא שמירה
+              </button>
+
+              <button
+                type="button"
+                disabled={isSavingAdminEdit}
+                onClick={handleSaveAdminEdit}
+                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs md:text-sm font-bold flex items-center gap-2 transition cursor-pointer shadow-sm"
+              >
+                {isSavingAdminEdit ? (
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                ) : (
+                  <Save className="w-4 h-4" />
+                )}
+                שמור שינויים ותקן בענן
               </button>
             </div>
           </div>

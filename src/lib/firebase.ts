@@ -416,6 +416,107 @@ export async function updateSubmissionSignature(
   }
 }
 
+export async function updateSubmission(
+  id: string,
+  updatedFields: Partial<TeacherSubmission>
+): Promise<void> {
+  const path = `submissions/${id}`;
+  const cleanData: Record<string, any> = {};
+
+  if (updatedFields.teacherName !== undefined) cleanData.teacherName = String(updatedFields.teacherName).trim();
+  if (updatedFields.teacherId !== undefined) cleanData.teacherId = String(updatedFields.teacherId).trim();
+  if (updatedFields.submissionDate !== undefined) cleanData.submissionDate = String(updatedFields.submissionDate).trim();
+  if (updatedFields.schoolYear !== undefined) cleanData.schoolYear = String(updatedFields.schoolYear).trim();
+  if (updatedFields.rows !== undefined) {
+    cleanData.rows = (updatedFields.rows || []).map((row, idx) => ({
+      rowNum: Number(row.rowNum) || (idx + 1),
+      subject: String(row.subject || '').trim(),
+      gradeGroup: String(row.gradeGroup || '').trim(),
+      studentsCount: String(row.studentsCount || '').trim(),
+      questionnaireCode: String(row.questionnaireCode || '').trim(),
+      externalExamBonus: String(row.externalExamBonus || '').trim(),
+      schoolExamBonus: String(row.schoolExamBonus || '').trim(),
+      projectBonus: String(row.projectBonus || '').trim(),
+      unitsCount: String(row.unitsCount || '').trim(),
+      outOfUnits: String(row.outOfUnits || '').trim(),
+      eligibleBonusPercent: String(row.eligibleBonusPercent || '').trim(),
+    }));
+  }
+  if (updatedFields.teacherSignature !== undefined) {
+    cleanData.teacherSignature = String(updatedFields.teacherSignature);
+  }
+  if (updatedFields.status !== undefined) {
+    cleanData.status = updatedFields.status;
+  }
+  if (updatedFields.notes !== undefined) {
+    cleanData.notes = String(updatedFields.notes);
+  }
+
+  // Update local storage first
+  const localList = getLocalSubmissions();
+  const existingIndex = localList.findIndex(s => s.id === id);
+  if (existingIndex >= 0) {
+    localList[existingIndex] = { ...localList[existingIndex], ...cleanData };
+    localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(localList));
+  }
+
+  // Then attempt server update
+  try {
+    await updateDoc(doc(db, 'submissions', id), cleanData);
+  } catch (error) {
+    console.warn('Firestore update warning:', error);
+    try {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    } catch {
+      // Local copy was already updated
+    }
+  }
+}
+
+export async function findSubmissionsByTeacherId(searchId: string): Promise<TeacherSubmission[]> {
+  const cleanId = searchId.trim();
+  if (!cleanId) return [];
+
+  // Generate variants: original, 9-digit padded, and without leading zeroes
+  const variants = Array.from(new Set([
+    cleanId,
+    cleanId.padStart(9, '0'),
+    cleanId.replace(/^0+/, '')
+  ])).filter(Boolean);
+
+  const map = new Map<string, TeacherSubmission>();
+
+  // Check server for each variant
+  for (const variant of variants) {
+    try {
+      const q = query(collection(db, 'submissions'), where('teacherId', '==', variant));
+      const snapshot = await getDocs(q);
+      snapshot.docs.forEach(d => {
+        map.set(d.id, {
+          id: d.id,
+          ...d.data()
+        } as TeacherSubmission);
+      });
+    } catch (err) {
+      console.warn(`Server search error for variant ${variant}:`, err);
+    }
+  }
+
+  // Also check local cache for each variant
+  const localDocs = getLocalSubmissions();
+  for (const docItem of localDocs) {
+    const docTeacherId = (docItem.teacherId || '').trim();
+    if (variants.includes(docTeacherId) || variants.includes(docTeacherId.padStart(9, '0'))) {
+      if (docItem.id && !map.has(docItem.id)) {
+        map.set(docItem.id, docItem);
+      }
+    }
+  }
+
+  const results = Array.from(map.values());
+  return results.sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+}
+
 export async function deleteSubmission(id: string): Promise<void> {
   const path = `submissions/${id}`;
   deleteLocalSubmission(id);

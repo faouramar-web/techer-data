@@ -126,7 +126,8 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
                 type="password"
                 value={pinCode}
                 onChange={(e) => setPinCode(e.target.value)}
-                placeholder="סיסמת מנהל (160525)"
+                placeholder="הזן סיסמת כניסה..."
+                autoComplete="current-password"
                 className="w-full pr-10 pl-3 py-2.5 border border-gray-300 rounded-xl text-sm font-mono text-center tracking-widest focus:ring-2 focus:ring-sky-500"
               />
             </div>

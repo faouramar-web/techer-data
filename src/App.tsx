@@ -13,7 +13,8 @@ import {
   Phone, 
   MapPin, 
   FileText,
-  UserCheck
+  UserCheck,
+  Search
 } from 'lucide-react';
 
 export default function App() {
@@ -102,15 +103,39 @@ export default function App() {
           </div>
 
           {/* Action buttons */}
-          <div className="flex items-center gap-2.5">
+          <div className="flex items-center gap-2">
+            {/* Quick search/edit button for teachers */}
+            <button
+              onClick={() => {
+                if (currentView !== 'teacher') {
+                  setCurrentView('teacher');
+                }
+                setTimeout(() => {
+                  const searchEl = document.getElementById('teacher-lookup-section');
+                  if (searchEl) {
+                    searchEl.scrollIntoView({ behavior: 'smooth' });
+                  }
+                  const inputEl = document.getElementById('teacher-lookup-input') as HTMLInputElement;
+                  if (inputEl) {
+                    inputEl.focus();
+                  }
+                }, 100);
+              }}
+              title="איתור ועריכת טופס שכבר נשלח לפי תעודת זהות"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-950 text-xs font-bold rounded-lg transition cursor-pointer shadow-2xs"
+            >
+              <Search className="w-3.5 h-3.5 text-amber-700" />
+              <span>איתור / תיקון טופס</span>
+            </button>
+
             {/* Share link to teachers button */}
             <button
               onClick={handleCopyLink}
               title="העתק קישור לשליחה למורים בוואטסאפ או במייל"
-              className="hidden sm:flex items-center gap-1.5 px-3.5 py-1.5 bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-800 text-xs font-bold rounded-lg transition cursor-pointer"
+              className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-800 text-xs font-bold rounded-lg transition cursor-pointer"
             >
               {copiedLink ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4" />}
-              {copiedLink ? 'הקישור הועתק!' : 'העתק קישור למורים'}
+              {copiedLink ? 'הקישור הועתק!' : 'העתק קישור'}
             </button>
 
             {/* Admin toggle / login */}
