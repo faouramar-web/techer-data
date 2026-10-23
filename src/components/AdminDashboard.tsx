@@ -44,7 +44,8 @@ import {
   RotateCcw,
   Edit3,
   Save,
-  Plus
+  Plus,
+  Lock
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -724,9 +725,19 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, adminE
                         </div>
                       </td>
 
-                      {/* ID */}
+                      {/* ID & PIN */}
                       <td className="p-3.5 font-mono text-gray-700">
-                        {sub.teacherId}
+                        <div className="font-bold">{sub.teacherId}</div>
+                        {sub.secretPin ? (
+                          <div className="text-[11px] font-sans font-bold text-amber-800 bg-amber-50 border border-amber-200 px-1.5 py-0.5 rounded-md inline-flex items-center gap-1 mt-1" title="קוד אישי סודי שהמורה קבע">
+                            <Lock className="w-3 h-3 text-amber-600" />
+                            <span>קוד: <span className="font-mono text-amber-950">{sub.secretPin}</span></span>
+                          </div>
+                        ) : (
+                          <div className="text-[10px] text-gray-400 mt-0.5 font-sans">
+                            ללא קוד
+                          </div>
+                        )}
                       </td>
 
                       {/* Date */}

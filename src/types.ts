@@ -16,6 +16,7 @@ export interface TeacherSubmission {
   id?: string;
   teacherName: string;
   teacherId: string;
+  secretPin?: string;
   submissionDate: string;
   schoolYear: string;
   rows: FormRow[];

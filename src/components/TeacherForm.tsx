@@ -21,25 +21,29 @@ import {
   Printer, 
   Plus, 
   Trash2, 
-  RotateCcw,
-  Sparkles,
-  Calendar,
-  User,
-  CreditCard,
-  PenTool,
-  Info,
-  Search,
-  Edit3,
-  X,
-  ChevronDown,
-  ChevronUp,
-  Save,
-  History
+  RotateCcw, 
+  Sparkles, 
+  Calendar, 
+  User, 
+  CreditCard, 
+  PenTool, 
+  Info, 
+  Search, 
+  Edit3, 
+  X, 
+  ChevronDown, 
+  ChevronUp, 
+  Save, 
+  History,
+  Lock,
+  Key,
+  ShieldAlert
 } from 'lucide-react';
 
 export const TeacherForm: React.FC = () => {
   const [teacherName, setTeacherName] = useState('');
   const [teacherId, setTeacherId] = useState('');
+  const [secretPin, setSecretPin] = useState('');
   const [submissionDate, setSubmissionDate] = useState(
     new Date().toISOString().split('T')[0]
   );
@@ -47,13 +51,15 @@ export const TeacherForm: React.FC = () => {
   const [teacherSignature, setTeacherSignature] = useState('');
   const [signatureMode, setSignatureMode] = useState<'text' | 'draw'>('draw');
 
-  // Existing submission editing state (e.g. correcting a questionnaire code)
+  // Existing submission editing state (with secret PIN security)
   const [editingSubmissionId, setEditingSubmissionId] = useState<string | null>(null);
   const [isLookupOpen, setIsLookupOpen] = useState(false);
   const [lookupIdInput, setLookupIdInput] = useState('');
+  const [lookupPinInput, setLookupPinInput] = useState('');
   const [lookupLoading, setLookupLoading] = useState(false);
   const [lookupResults, setLookupResults] = useState<TeacherSubmission[] | null>(null);
   const [lookupMessage, setLookupMessage] = useState<string | null>(null);
+  const [pinError, setPinError] = useState<string | null>(null);
 
   // Canvas ref for drawing signature on mobile touchscreens and desktop
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -225,6 +231,7 @@ export const TeacherForm: React.FC = () => {
     setEditingSubmissionId(sub.id);
     setTeacherName(sub.teacherName || '');
     setTeacherId(sub.teacherId || '');
+    setSecretPin(sub.secretPin || '');
     setSubmissionDate(sub.submissionDate || new Date().toISOString().split('T')[0]);
     setSchoolYear(sub.schoolYear || 'תשפ"ז (2026-2027)');
     if (sub.rows && sub.rows.length > 0) {
@@ -262,6 +269,7 @@ export const TeacherForm: React.FC = () => {
     setEditingSubmissionId(null);
     setTeacherName('');
     setTeacherId('');
+    setSecretPin('');
     setTeacherSignature('');
     setRows([{ rowNum: 1, ...EMPTY_ROW }]);
     clearCanvas();
@@ -270,18 +278,40 @@ export const TeacherForm: React.FC = () => {
   const handleSearchExistingSubmission = async (e: React.FormEvent) => {
     e.preventDefault();
     const cleanId = lookupIdInput.trim();
+    const cleanPin = lookupPinInput.trim();
+
     if (!cleanId) {
       setLookupMessage('נא להזין מספר תעודת זהות');
       return;
     }
+
+    if (!cleanPin) {
+      setLookupMessage('נא להזין את הקוד האישי הסודי (4 ספרות) שקבעת בעת ההגשה');
+      return;
+    }
+
+    if (cleanPin.length !== 4) {
+      setLookupMessage('הקוד האישי הסודי חייב להכיל 4 ספרות בדיוק');
+      return;
+    }
+
     setLookupLoading(true);
     setLookupMessage(null);
+    setPinError(null);
     setLookupResults(null);
+
     try {
       const results = await findSubmissionsByTeacherId(cleanId);
       if (results.length === 0) {
         setLookupMessage('לא נמצאו טפסים שהוגשו עבור מספר תעודת זהות זו במערכת.');
       } else {
+        // Validate PIN security against the existing submission
+        const sub = results[0];
+        if (sub.secretPin && sub.secretPin !== cleanPin) {
+          setPinError('❌ קוד אישי שגוי! למען אבטחת המידע ומניעת שינויים זרים, הגישה לטופס נחסמה. אם שכחת את הקוד האישי שלך, פנה למרכז השכר עמאר פאעור.');
+          setLookupResults(null);
+          return;
+        }
         setLookupResults(results);
       }
     } catch (err) {
@@ -297,6 +327,7 @@ export const TeacherForm: React.FC = () => {
     id: editingSubmissionId || undefined,
     teacherName: teacherName.trim(),
     teacherId: teacherId.trim(),
+    secretPin: secretPin.trim() || undefined,
     submissionDate,
     schoolYear,
     rows,
@@ -320,6 +351,11 @@ export const TeacherForm: React.FC = () => {
       return;
     }
 
+    if (!secretPin.trim() || secretPin.trim().length !== 4) {
+      setErrorMsg('חובה לקבוע קוד אישי סודי בן 4 ספרות בדיוק (למשל: 4821) כדי להבטיח שרק אתה תוכל לערוך את הטופס בעתיד');
+      return;
+    }
+
     if (!submissionDate) {
       setErrorMsg('יש לבחור תאריך מלוח השנה');
       return;
@@ -335,6 +371,7 @@ export const TeacherForm: React.FC = () => {
       const submissionPayload: Omit<TeacherSubmission, 'id'> = {
         teacherName: teacherName.trim(),
         teacherId: teacherId.trim(),
+        secretPin: secretPin.trim(),
         submissionDate,
         schoolYear,
         rows,
@@ -411,6 +448,17 @@ export const TeacherForm: React.FC = () => {
               <span className="text-emerald-700">תאריך הגשה:</span>
               <span>{submittedData.submissionDate}</span>
             </div>
+            {submittedData.secretPin && (
+              <div className="flex justify-between items-center py-2 border-b border-emerald-200 bg-amber-50/80 -mx-4 px-4 rounded-lg my-1">
+                <span className="text-amber-900 font-bold flex items-center gap-1.5 text-xs">
+                  <Lock className="w-4 h-4 text-amber-700" />
+                  <span>קוד אישי סודי להגנה ועריכה:</span>
+                </span>
+                <span className="font-mono font-black text-base text-amber-950 bg-white border border-amber-300 px-3 py-0.5 rounded-md shadow-2xs">
+                  {submittedData.secretPin}
+                </span>
+              </div>
+            )}
             <div className="flex justify-between py-1">
               <span className="text-emerald-700">מספר אסמכתא:</span>
               <span className="font-mono text-xs text-emerald-800">{submittedData.id}</span>
@@ -551,36 +599,41 @@ export const TeacherForm: React.FC = () => {
             <div className="bg-gradient-to-l from-sky-100 via-sky-50 to-blue-50 px-5 py-4 border-b border-sky-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-right">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-sky-700 text-white flex items-center justify-center shadow-xs shrink-0">
-                  <Search className="w-5 h-5" />
+                  <Lock className="w-5 h-5 text-amber-300" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-sm md:text-base font-black text-sky-950">
                       הגשת כבר טופס וברצונך לתקן טעות (סמל שאלון, שעות או מקצוע)?
                     </span>
-                    <span className="bg-amber-500 text-white text-[11px] font-black px-2 py-0.5 rounded-full shadow-2xs">
-                      איתור לפי ת.ז.
+                    <span className="bg-amber-500 text-white text-[11px] font-black px-2 py-0.5 rounded-full shadow-2xs flex items-center gap-1">
+                      <Lock className="w-3 h-3" />
+                      איתור מוגן בקוד סודי
                     </span>
                   </div>
                   <p className="text-xs text-sky-800 mt-0.5 font-medium">
-                    הזן את מספר תעודת הזהות שלך בשדה למטה, והמערכת תטען את הטופס שכבר מילאת לעריכה מיידית:
+                    הזן את מספר תעודת הזהות שלך ואת הקוד האישי (4 ספרות) שקבעת בעת ההגשה לאימות וטעינת הטופס:
                   </p>
                 </div>
               </div>
             </div>
 
-            {/* Direct input and search button */}
+            {/* Direct inputs: ID + Secret PIN */}
             <div className="p-5 md:p-6 bg-white">
               <form onSubmit={handleSearchExistingSubmission} className="flex flex-col sm:flex-row items-center gap-3">
+                {/* ID input */}
                 <div className="relative flex-1 w-full">
+                  <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                    מספר תעודת זהות (7-9 ספרות)
+                  </label>
                   <input
                     id="teacher-lookup-input"
                     type="text"
                     maxLength={9}
                     value={lookupIdInput}
                     onChange={(e) => setLookupIdInput(e.target.value.replace(/\D/g, ''))}
-                    placeholder="הקלד כאן מספר תעודת זהות (7 עד 9 ספרות)..."
-                    className="w-full px-4 py-3 rounded-xl border-2 border-gray-300 focus:border-sky-600 focus:ring-2 focus:ring-sky-200 text-sm md:text-base font-mono tracking-wider bg-gray-50/50 focus:bg-white text-gray-900 placeholder:text-gray-400 placeholder:font-sans placeholder:tracking-normal font-bold transition"
+                    placeholder="הקלד כאן ת.ז. ישראלית..."
+                    className="w-full px-4 py-2.5 rounded-xl border-2 border-gray-300 focus:border-sky-600 focus:ring-2 focus:ring-sky-200 text-sm font-mono tracking-wider bg-gray-50/50 focus:bg-white text-gray-900 placeholder:text-gray-400 font-bold transition"
                   />
                   {lookupIdInput && (
                     <button
@@ -589,27 +642,49 @@ export const TeacherForm: React.FC = () => {
                         setLookupIdInput('');
                         setLookupResults(null);
                         setLookupMessage(null);
+                        setPinError(null);
                       }}
-                      className="absolute left-3 top-3.5 text-gray-400 hover:text-gray-700 p-1"
+                      className="absolute left-3 top-8 text-gray-400 hover:text-gray-700 p-1"
                     >
                       <X className="w-4 h-4" />
                     </button>
                   )}
                 </div>
-                <button
-                  type="submit"
-                  disabled={lookupLoading || !lookupIdInput.trim()}
-                  className="w-full sm:w-auto px-6 py-3 bg-sky-700 hover:bg-sky-800 disabled:opacity-50 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow-md hover:shadow-lg shrink-0"
-                >
-                  {lookupLoading ? (
-                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                  ) : (
-                    <Search className="w-4 h-4" />
-                  )}
-                  חפש טפסים שלי לעדכון
-                </button>
+
+                {/* Secret PIN input */}
+                <div className="relative w-full sm:w-56">
+                  <label className="block text-[11px] font-bold text-gray-700 mb-1 flex items-center gap-1">
+                    <Key className="w-3 h-3 text-amber-600" />
+                    <span>קוד אישי סודי (4 ספרות)</span>
+                  </label>
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={4}
+                    value={lookupPinInput}
+                    onChange={(e) => setLookupPinInput(e.target.value.replace(/\D/g, ''))}
+                    placeholder="4 ספרות..."
+                    className="w-full px-4 py-2.5 rounded-xl border-2 border-amber-300 focus:border-amber-500 focus:ring-2 focus:ring-amber-200 text-sm font-mono tracking-widest bg-amber-50/30 focus:bg-white text-gray-900 placeholder:text-gray-400 font-bold transition text-center"
+                  />
+                </div>
+
+                <div className="w-full sm:w-auto pt-5">
+                  <button
+                    type="submit"
+                    disabled={lookupLoading || !lookupIdInput.trim() || lookupPinInput.trim().length !== 4}
+                    className="w-full sm:w-auto px-6 py-2.5 bg-sky-700 hover:bg-sky-800 disabled:opacity-50 text-white rounded-xl text-sm font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow-md hover:shadow-lg shrink-0"
+                  >
+                    {lookupLoading ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Search className="w-4 h-4" />
+                    )}
+                    אימות ואיתור טופס
+                  </button>
+                </div>
               </form>
 
+              {/* Error messages */}
               {lookupMessage && (
                 <div className="mt-4 p-3.5 bg-amber-50 border border-amber-300 rounded-xl text-xs md:text-sm text-amber-900 font-semibold flex items-center gap-2 animate-fade-in">
                   <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
@@ -617,61 +692,83 @@ export const TeacherForm: React.FC = () => {
                 </div>
               )}
 
+              {pinError && (
+                <div className="mt-4 p-4 bg-rose-50 border-2 border-rose-300 rounded-xl text-xs md:text-sm text-rose-900 font-bold flex items-center gap-3 animate-shake">
+                  <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0" />
+                  <span>{pinError}</span>
+                </div>
+              )}
+
+              {/* Results display */}
               {lookupResults && lookupResults.length > 0 && (
                 <div className="space-y-3 mt-4 pt-4 border-t border-gray-100 animate-fade-in">
                   <div className="text-xs md:text-sm font-bold text-gray-800 flex items-center justify-between">
-                    <span>נמצאו {lookupResults.length} טפסים עבור תעודת זהות {lookupIdInput}:</span>
-                    <span className="text-[11px] text-gray-500 font-normal">בחר טופס לטעינה ועריכה</span>
+                    <span className="flex items-center gap-1.5 text-emerald-800 font-black">
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                      <span>זהות אומתה בהצלחה! נמצא טופס עבור ת.ז. {lookupIdInput}:</span>
+                    </span>
+                    <span className="text-[11px] text-gray-500 font-normal">לחץ על הכפתור כדי לערוך</span>
                   </div>
-                  {lookupResults.map((res) => (
-                    <div
-                      key={res.id}
-                      className="p-4 rounded-xl border-2 border-sky-100 hover:border-sky-400 bg-sky-50/30 flex flex-col md:flex-row md:items-center justify-between gap-4 transition shadow-xs"
-                    >
-                      <div className="space-y-1.5">
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className="font-extrabold text-gray-900 text-sm md:text-base">
-                            {res.teacherName}
-                          </span>
-                          <span className="text-xs bg-sky-100 text-sky-800 px-2 py-0.5 rounded font-mono font-bold">
-                            ת.ז. {res.teacherId}
-                          </span>
-                          <span className="text-xs text-gray-500">
-                            תאריך הגשה: <strong>{res.submissionDate}</strong>
-                          </span>
-                          <span className="text-xs text-gray-500">
-                            שנה"ל: {res.schoolYear}
-                          </span>
-                        </div>
-                        <div className="text-xs text-gray-700 flex flex-wrap items-center gap-2">
-                          <span className="font-bold text-gray-800">שאלונים שדווחו בטופס זה:</span>
-                          {res.rows && res.rows.length > 0 ? (
-                            res.rows
-                              .filter((r) => r.questionnaireCode || r.subject)
-                              .map((r, idx) => (
-                                <span
-                                  key={idx}
-                                  className="bg-white border border-gray-300 px-2.5 py-0.5 rounded text-[11px] text-sky-900 font-mono font-bold shadow-2xs"
-                                >
-                                  {r.subject || 'שאלון'} (סמל: {r.questionnaireCode || 'ללא'})
-                                </span>
-                              ))
-                          ) : (
-                            <span className="text-gray-400">אין שורות שדווחו</span>
-                          )}
-                        </div>
-                      </div>
+                  {lookupResults.map((res) => {
+                    const isApproved = res.principalApproved || res.status === 'approved';
 
-                      <button
-                        type="button"
-                        onClick={() => handleLoadSubmissionForEditing(res)}
-                        className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow-md hover:shadow-lg shrink-0"
+                    return (
+                      <div
+                        key={res.id}
+                        className="p-4 rounded-xl border-2 border-sky-100 hover:border-sky-400 bg-sky-50/30 flex flex-col md:flex-row md:items-center justify-between gap-4 transition shadow-xs"
                       >
-                        <Edit3 className="w-4 h-4" />
-                        טען וערוך טופס זה
-                      </button>
-                    </div>
-                  ))}
+                        <div className="space-y-1.5">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-extrabold text-gray-900 text-sm md:text-base">
+                              {res.teacherName}
+                            </span>
+                            <span className="text-xs bg-sky-100 text-sky-800 px-2 py-0.5 rounded font-mono font-bold">
+                              ת.ז. {res.teacherId}
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              תאריך הגשה: <strong>{res.submissionDate}</strong>
+                            </span>
+                            <span className="text-xs text-gray-500">
+                              שנה"ל: {res.schoolYear}
+                            </span>
+                          </div>
+                          <div className="text-xs text-gray-700 flex flex-wrap items-center gap-2">
+                            <span className="font-bold text-gray-800">שאלונים שדווחו בטופס זה:</span>
+                            {res.rows && res.rows.length > 0 ? (
+                              res.rows
+                                .filter((r) => r.questionnaireCode || r.subject)
+                                .map((r, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="bg-white border border-gray-300 px-2.5 py-0.5 rounded text-[11px] text-sky-900 font-mono font-bold shadow-2xs"
+                                  >
+                                    {r.subject || 'שאלון'} (סמל: {r.questionnaireCode || 'ללא'})
+                                  </span>
+                                ))
+                            ) : (
+                              <span className="text-gray-400">אין שורות שדווחו</span>
+                            )}
+                          </div>
+                        </div>
+
+                        {isApproved ? (
+                          <div className="p-3 bg-emerald-100/70 border border-emerald-300 rounded-xl text-emerald-950 text-xs font-bold flex items-center gap-2">
+                            <Lock className="w-4 h-4 text-emerald-700 shrink-0" />
+                            <span>הטופס נבדק ואושר סופית ע"י ההנהלה ונעול לעריכה</span>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => handleLoadSubmissionForEditing(res)}
+                            className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-2 transition cursor-pointer shadow-md hover:shadow-lg shrink-0"
+                          >
+                            <Edit3 className="w-4 h-4" />
+                            טען וערוך טופס זה
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>
@@ -735,7 +832,7 @@ export const TeacherForm: React.FC = () => {
               פרטי המורה והגשה
             </h2>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
               {/* Teacher Name */}
               <div>
                 <label className="block text-xs md:text-sm font-bold text-gray-800 mb-1.5">
@@ -787,40 +884,37 @@ export const TeacherForm: React.FC = () => {
                     ספרת ביקורת אינה תקינה לפי ת.ז. ישראלית
                   </p>
                 )}
+              </div>
 
-                {/* Direct helper to load existing form if teacher already submitted */}
-                {!editingSubmissionId && teacherId.length >= 7 && (
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      setLookupIdInput(teacherId);
-                      setLookupLoading(true);
-                      setLookupMessage(null);
-                      setLookupResults(null);
-                      const el = document.getElementById('teacher-lookup-section');
-                      if (el) el.scrollIntoView({ behavior: 'smooth' });
-                      try {
-                        const results = await findSubmissionsByTeacherId(teacherId);
-                        if (results.length === 0) {
-                          setLookupMessage(`לא נמצאו טפסים קודמים עבור ת.ז. ${teacherId} במערכת.`);
-                        } else {
-                          setLookupResults(results);
-                        }
-                      } catch (err) {
-                        setLookupMessage('אירעה שגיאה בחיפוש.');
-                      } finally {
-                        setLookupLoading(false);
-                      }
-                    }}
-                    className="mt-2 text-xs text-sky-800 bg-sky-50 hover:bg-sky-100 border border-sky-300 rounded-lg p-2 font-bold flex items-center justify-between gap-1 transition cursor-pointer w-full"
-                  >
-                    <span className="flex items-center gap-1.5">
-                      <Search className="w-3.5 h-3.5 text-sky-600 shrink-0" />
-                      <span>הגשת כבר טופס עם ת.ז. זו?</span>
+              {/* Secret PIN - Personal Protection */}
+              <div className="bg-amber-50/60 border-2 border-amber-300 rounded-xl p-3">
+                <label className="block text-xs md:text-sm font-bold text-amber-950 mb-1 flex items-center justify-between">
+                  <span className="flex items-center gap-1.5">
+                    <Lock className="w-4 h-4 text-amber-700" />
+                    <span>קוד אישי סודי (4 ספרות)</span>
+                    <span className="text-rose-500">*</span>
+                  </span>
+                </label>
+                <div className="relative">
+                  <input
+                    type="password"
+                    inputMode="numeric"
+                    maxLength={4}
+                    required
+                    value={secretPin}
+                    onChange={(e) => setSecretPin(e.target.value.replace(/\D/g, ''))}
+                    placeholder="4 ספרות..."
+                    className="w-full px-3.5 py-2 rounded-lg border-2 border-amber-300 focus:border-amber-600 focus:ring-2 focus:ring-amber-200 text-sm font-mono tracking-widest text-center bg-white font-bold text-gray-900 transition"
+                  />
+                  {secretPin.length === 4 && (
+                    <span className="absolute left-2.5 top-2.5 text-[11px] text-emerald-600 font-bold flex items-center gap-0.5">
+                      <CheckCircle2 className="w-3.5 h-3.5" />
                     </span>
-                    <span className="underline text-sky-700">לחץ לאיתור וטעינה לעריכה</span>
-                  </button>
-                )}
+                  )}
+                </div>
+                <p className="text-[10px] text-amber-900 mt-1 leading-snug">
+                  קוד זה מונע מזרים לערוך את הטופס, ויאפשר רק לך לעדכן בעתיד.
+                </p>
               </div>
 
               {/* Date from Calendar */}
@@ -1391,6 +1485,17 @@ export const TeacherForm: React.FC = () => {
                 </>
               )}
             </button>
+          </div>
+
+          {/* Under form security & copyright note */}
+          <div className="pt-3 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between text-[11px] text-gray-500 gap-2">
+            <div className="flex items-center gap-1.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block"></span>
+              <span>הטופס מאובטח ונשמר ישירות בשרת המוסדי של תיכון מקיף א' מע'אר</span>
+            </div>
+            <div className="font-semibold text-gray-600">
+              כל הזכויות שמורות בלעדית לעמאר פאעור © 2026 | All Rights Reserved to Amar Faour
+            </div>
           </div>
         </form>
         {/* Printable fallback if teacher triggers print while on edit tab */}

@@ -12,9 +12,10 @@ service cloud.firestore {
 
     function isValidSubmission(data) {
       return data.keys().hasAll(['teacherName', 'teacherId', 'submissionDate', 'schoolYear', 'rows', 'status', 'createdBy', 'createdAt']) &&
-             data.keys().hasOnly(['id', 'teacherName', 'teacherId', 'submissionDate', 'schoolYear', 'rows', 'teacherSignature', 'status', 'principalApproved', 'principalSignature', 'principalApprovalDate', 'approvedBonusPercent', 'createdBy', 'createdAt', 'notes']) &&
+             data.keys().hasOnly(['id', 'teacherName', 'teacherId', 'secretPin', 'submissionDate', 'schoolYear', 'rows', 'teacherSignature', 'status', 'principalApproved', 'principalSignature', 'principalApprovalDate', 'approvedBonusPercent', 'createdBy', 'createdAt', 'notes']) &&
              data.teacherName is string && data.teacherName.size() >= 2 && data.teacherName.size() <= 100 &&
              data.teacherId is string && data.teacherId.size() >= 7 && data.teacherId.size() <= 15 &&
+             (!('secretPin' in data.keys()) || (data.secretPin is string && data.secretPin.size() <= 10)) &&
              data.submissionDate is string && data.submissionDate.size() <= 25 &&
              data.schoolYear is string && data.schoolYear.size() <= 25 &&
              data.rows is list && data.rows.size() <= 40 &&
