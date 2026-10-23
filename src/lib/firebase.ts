@@ -97,6 +97,7 @@ const LOCAL_STORAGE_KEY = 'maghar_bagrut_submissions_cache';
 
 export function getLocalSubmissions(): TeacherSubmission[] {
   try {
+    if (typeof window === 'undefined' || !window.localStorage) return [];
     const raw = localStorage.getItem(LOCAL_STORAGE_KEY);
     return raw ? JSON.parse(raw) : [];
   } catch (e) {
@@ -107,6 +108,7 @@ export function getLocalSubmissions(): TeacherSubmission[] {
 
 export function saveLocalSubmission(sub: TeacherSubmission): void {
   try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
     const list = getLocalSubmissions();
     const existingIndex = list.findIndex(
       (s) => (s.id && sub.id && s.id === sub.id) || 
@@ -125,6 +127,7 @@ export function saveLocalSubmission(sub: TeacherSubmission): void {
 
 export function deleteLocalSubmission(id: string): void {
   try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
     const list = getLocalSubmissions();
     const updated = list.filter((s) => s.id !== id);
     localStorage.setItem(LOCAL_STORAGE_KEY, JSON.stringify(updated));
@@ -159,6 +162,9 @@ export function sanitizeSubmission(sub: Partial<TeacherSubmission>): Record<stri
     createdAt: String(sub.createdAt || new Date().toISOString()),
   };
 
+  if (sub.secretPin) {
+    cleanData.secretPin = String(sub.secretPin).trim();
+  }
   if (sub.teacherSignature) {
     cleanData.teacherSignature = String(sub.teacherSignature);
   }
@@ -450,6 +456,9 @@ export async function updateSubmission(
   }
   if (updatedFields.notes !== undefined) {
     cleanData.notes = String(updatedFields.notes);
+  }
+  if (updatedFields.secretPin !== undefined) {
+    cleanData.secretPin = String(updatedFields.secretPin).trim();
   }
 
   // Update local storage first
