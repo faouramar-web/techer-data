@@ -1,0 +1,38 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Default-deny catch-all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidSubmission(data) {
+      return data.keys().hasAll(['teacherName', 'teacherId', 'submissionDate', 'schoolYear', 'rows', 'status', 'createdBy', 'createdAt']) &&
+             data.keys().hasOnly(['id', 'teacherName', 'teacherId', 'submissionDate', 'schoolYear', 'rows', 'teacherSignature', 'status', 'principalApproved', 'principalSignature', 'principalApprovalDate', 'approvedBonusPercent', 'createdBy', 'createdAt', 'notes']) &&
+             data.teacherName is string && data.teacherName.size() >= 2 && data.teacherName.size() <= 100 &&
+             data.teacherId is string && data.teacherId.size() >= 7 && data.teacherId.size() <= 15 &&
+             data.submissionDate is string && data.submissionDate.size() <= 25 &&
+             data.schoolYear is string && data.schoolYear.size() <= 25 &&
+             data.rows is list && data.rows.size() <= 40 &&
+             data.status in ['submitted', 'approved', 'rejected'] &&
+             data.createdBy is string && data.createdBy.size() <= 128 &&
+             data.createdAt is string && data.createdAt.size() <= 35;
+    }
+
+    match /submissions/{submissionId} {
+      // List all submissions for management & payroll
+      allow list: if true;
+      // Get single submission
+      allow get: if true;
+      // Teachers submit their official claim form with strict schema validation
+      allow create: if isValidId(submissionId) && isValidSubmission(request.resource.data);
+      // Payroll authorization updates and management
+      allow update: if isValidId(submissionId);
+      allow delete: if isValidId(submissionId);
+    }
+  }
+}

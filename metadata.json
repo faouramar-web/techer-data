@@ -1,0 +1,8 @@
+{
+  "name": "טופס גמול בגרות - מקיף א' מגאר",
+  "description": "מערכת דיווח ואיסוף נתוני זכאות לגמול הכנה לבגרות למורי תיכון מקיף א' ע\"ש קאסם גאנם מגאר, כולל ניהול, הפקת והדפסת טפסים רשמיים.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

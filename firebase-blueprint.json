@@ -1,0 +1,102 @@
+{
+  "entities": {
+    "TeacherSubmission": {
+      "title": "TeacherSubmission",
+      "description": "A high school teacher's bagrut preparation compensation claim form",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique document identifier"
+        },
+        "teacherName": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Full name of the teacher"
+        },
+        "teacherId": {
+          "type": "string",
+          "maxLength": 15,
+          "pattern": "^[0-9]{7,10}$",
+          "description": "Israeli National ID number"
+        },
+        "submissionDate": {
+          "type": "string",
+          "maxLength": 20,
+          "description": "Date chosen from calendar"
+        },
+        "schoolYear": {
+          "type": "string",
+          "maxLength": 20,
+          "description": "Hebrew school year e.g. תשפ\"ז"
+        },
+        "rows": {
+          "type": "array",
+          "description": "Up to 10 exam questionnaire rows"
+        },
+        "teacherSignature": {
+          "type": "string",
+          "maxLength": 50000,
+          "description": "Teacher digital signature or text signature"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["submitted", "approved", "rejected"],
+          "description": "Current status of the claim"
+        },
+        "principalApproved": {
+          "type": "boolean",
+          "description": "Whether school principal has approved"
+        },
+        "principalSignature": {
+          "type": "string",
+          "maxLength": 50000,
+          "description": "Principal digital signature"
+        },
+        "principalApprovalDate": {
+          "type": "string",
+          "maxLength": 20,
+          "description": "Date of principal approval"
+        },
+        "approvedBonusPercent": {
+          "type": "string",
+          "maxLength": 20,
+          "description": "Total bonus percent confirmed for municipal submission"
+        },
+        "createdAt": {
+          "type": "string",
+          "description": "Submission creation timestamp"
+        }
+      },
+      "required": ["teacherName", "teacherId", "submissionDate", "schoolYear", "rows", "status"]
+    },
+    "AdminUser": {
+      "title": "AdminUser",
+      "description": "Administrator account with permission to view and print all submissions",
+      "type": "object",
+      "properties": {
+        "email": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Admin email address"
+        },
+        "role": {
+          "type": "string",
+          "enum": ["admin"],
+          "description": "User role"
+        }
+      },
+      "required": ["email", "role"]
+    }
+  },
+  "firestore": {
+    "/submissions/{submissionId}": {
+      "schema": "TeacherSubmission",
+      "description": "Collection of bagrut compensation submissions made by teachers"
+    },
+    "/admins/{adminId}": {
+      "schema": "AdminUser",
+      "description": "Collection of authorized administrators"
+    }
+  }
+}
