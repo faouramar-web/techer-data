@@ -78,6 +78,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, adminE
   const [adminEditYear, setAdminEditYear] = useState('');
   const [isSavingAdminEdit, setIsSavingAdminEdit] = useState(false);
 
+  // Batch auto-fix for all submissions' eligible bonus percentage
+  const [isFixingAllSubmissions, setIsFixingAllSubmissions] = useState(false);
+  const [fixSuccessMessage, setFixSuccessMessage] = useState<string | null>(null);
+
   // Quick PIN modal state
   const [pinModalSub, setPinModalSub] = useState<TeacherSubmission | null>(null);
   const [pinModalInput, setPinModalInput] = useState('');
@@ -185,7 +189,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, adminE
     setAdminEditYear(sub.schoolYear || 'תשפ"ז (2026-2027)');
     setAdminEditRows(
       sub.rows && sub.rows.length > 0
-        ? sub.rows.map((r, i) => ({ ...EMPTY_ROW, ...r, rowNum: i + 1 }))
+        ? sub.rows.map((r, i) => {
+            const rowObj = { ...EMPTY_ROW, ...r, rowNum: i + 1 };
+            rowObj.eligibleBonusPercent = calculateRowEligiblePercent(rowObj) || rowObj.eligibleBonusPercent;
+            return rowObj;
+          })
         : [{ rowNum: 1, ...EMPTY_ROW }]
     );
   };
@@ -230,13 +238,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, adminE
     if (!editingSubmissionAdmin || !editingSubmissionAdmin.id) return;
     setIsSavingAdminEdit(true);
     try {
+      const sanitizedRows = adminEditRows.map((r) => ({
+        ...r,
+        eligibleBonusPercent: calculateRowEligiblePercent(r) || r.eligibleBonusPercent,
+      }));
+
       const updatedPayload: Partial<TeacherSubmission> = {
         teacherName: adminEditName.trim(),
         teacherId: adminEditId.trim(),
         secretPin: adminEditPin.trim() || undefined,
         submissionDate: adminEditDate,
         schoolYear: adminEditYear,
-        rows: adminEditRows,
+        rows: sanitizedRows,
       };
 
       await updateSubmission(editingSubmissionAdmin.id, updatedPayload);
@@ -419,6 +432,49 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, adminE
     }
   };
 
+  // Batch auto-fix for all submissions: update eligibleBonusPercent to match sum of bonuses
+  const handleAutoFixAllSubmissions = async () => {
+    if (submissions.length === 0) return;
+    const confirm = window.confirm(
+      'פעולה זו תעבור אוטומטית על כל הטפסים שהוגשו עד כה, ותתקן את עמודת "זכאי לגמול %" כך שתעתיק בדיוק את סכום אחוזי הגמול של השאלון (למשל 1.4%, 0.6%, 2%) ללא שברים וחלוקות ביח"ל.\n\nהאם לבצע תיקון וסנכרון עכשיו לכל הטפסים?'
+    );
+    if (!confirm) return;
+
+    setIsFixingAllSubmissions(true);
+    setFixSuccessMessage(null);
+    let updatedCount = 0;
+
+    try {
+      for (const sub of submissions) {
+        if (!sub.id || !sub.rows || sub.rows.length === 0) continue;
+
+        let hasChange = false;
+        const newRows = sub.rows.map((r) => {
+          const correctVal = calculateRowEligiblePercent(r);
+          if (correctVal !== r.eligibleBonusPercent) {
+            hasChange = true;
+            return { ...r, eligibleBonusPercent: correctVal };
+          }
+          return r;
+        });
+
+        if (hasChange) {
+          await updateSubmission(sub.id, { rows: newRows });
+          updatedCount++;
+        }
+      }
+
+      setFixSuccessMessage(`התיקון והסנכרון הושלם בהצלחה! ${updatedCount} טפסים עודכנו בשרת עם הערכים המדויקים.`);
+      await loadSubmissions();
+      setTimeout(() => setFixSuccessMessage(null), 8000);
+    } catch (err) {
+      console.error('Error auto-fixing submissions:', err);
+      alert('אירעה שגיאה בעת עדכון הטפסים. אנא נסה שוב.');
+    } finally {
+      setIsFixingAllSubmissions(false);
+    }
+  };
+
   // CSV export for municipality
   const exportToCSV = () => {
     const headers = [
@@ -478,7 +534,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, adminE
             r.projectBonus ? `${r.projectBonus}%` : '',
             r.unitsCount,
             r.outOfUnits,
-            (r.eligibleBonusPercent || calculateRowEligiblePercent(r)) ? `${r.eligibleBonusPercent || calculateRowEligiblePercent(r)}%` : '',
+            (calculateRowEligiblePercent(r) || r.eligibleBonusPercent) ? `${calculateRowEligiblePercent(r) || r.eligibleBonusPercent}%` : '',
             sub.principalApproved ? 'מאושר' : 'ממתין',
             sub.approvedBonusPercent || ''
           ]);
@@ -623,6 +679,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, adminE
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
+          {/* 1-Click Auto-Fix & Sync all submissions button */}
+          <button
+            onClick={handleAutoFixAllSubmissions}
+            disabled={isFixingAllSubmissions || submissions.length === 0}
+            className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl text-xs md:text-sm font-bold flex items-center gap-2 shadow-sm transition cursor-pointer"
+            title="מעדכן ומסנכרן אוטומטית את כל הטפסים הקיימים בשרת כך שעמודת זכאי לגמול תהיה שווה בדיוק לסכום עמודי הגמול"
+          >
+            <RefreshCw className={`w-4 h-4 ${isFixingAllSubmissions ? 'animate-spin' : ''}`} />
+            {isFixingAllSubmissions ? 'מתקן ומסנכרן טפסים בענן...' : 'תיקון וסנכרון גמולים לכל הטפסים (קליק אחד)'}
+          </button>
+
           <button
             onClick={handleBatchPrint}
             disabled={submissions.length === 0}
@@ -642,6 +709,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, adminE
           </button>
         </div>
       </div>
+
+      {/* Success notification after batch auto-fix */}
+      {fixSuccessMessage && (
+        <div className="mb-6 p-4 bg-emerald-50 border border-emerald-300 rounded-xl text-emerald-900 font-bold text-xs md:text-sm flex items-center gap-2.5 animate-fade-in shadow-xs">
+          <CheckCircle className="w-5 h-5 text-emerald-600 shrink-0" />
+          <span>{fixSuccessMessage}</span>
+        </div>
+      )}
 
       {/* Filters and Search */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-5 mb-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">

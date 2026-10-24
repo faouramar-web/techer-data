@@ -104,14 +104,5 @@ export const calculateRowEligiblePercent = (row: Partial<FormRow>): string => {
   const prj = parseBonusNumber(row.projectBonus);
   const totalBonus = ext + sch + prj;
 
-  const u = parseFloat((row.unitsCount || '').toString().replace(/,/g, '.').trim());
-  const out = parseFloat((row.outOfUnits || '').toString().replace(/,/g, '.').trim());
-
-  let ratio = 1;
-  if (!isNaN(u) && !isNaN(out) && out > 0) {
-    ratio = u / out;
-  }
-
-  const calculated = totalBonus * ratio;
-  return parseFloat(calculated.toFixed(2)).toString();
+  return parseFloat(totalBonus.toFixed(2)).toString();
 };

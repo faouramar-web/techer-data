@@ -273,7 +273,7 @@ export async function generateWordDocx(submission: TeacherSubmission): Promise<B
           new TableCell({
             borders: thinBorder,
             verticalAlign: VerticalAlign.CENTER,
-            children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: rowData.eligibleBonusPercent || calculateRowEligiblePercent(rowData) || '', size: 18 })] })],
+            children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new TextRun({ text: calculateRowEligiblePercent(rowData) || rowData.eligibleBonusPercent || '', size: 18 })] })],
           }),
           new TableCell({
             borders: thinBorder,

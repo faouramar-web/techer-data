@@ -213,7 +213,7 @@ export const OfficialDocumentView: React.FC<OfficialDocumentViewProps> = ({
                   {row.outOfUnits}
                 </td>
                 <td className="border border-black text-center px-1 print:px-0.5 font-bold text-black">
-                  {formatPercent(row.eligibleBonusPercent || calculateRowEligiblePercent(row))}
+                  {formatPercent(calculateRowEligiblePercent(row) || row.eligibleBonusPercent)}
                 </td>
               </tr>
             ))}

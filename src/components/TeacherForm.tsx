@@ -113,7 +113,7 @@ export const TeacherForm: React.FC = () => {
   }, 0);
 
   const totalBonusPercent = rows.reduce((sum, r) => {
-    const val = parseBonusNumber(r.eligibleBonusPercent);
+    const val = parseBonusNumber(calculateRowEligiblePercent(r) || r.eligibleBonusPercent);
     return sum + val;
   }, 0);
 
@@ -1302,8 +1302,12 @@ export const TeacherForm: React.FC = () => {
                             type="text"
                             readOnly
                             tabIndex={-1}
-                            value={row.eligibleBonusPercent ? `${row.eligibleBonusPercent}%` : ''}
-                            placeholder="חישוב אוטומטי"
+                            value={(() => {
+                              const val = row.eligibleBonusPercent || calculateRowEligiblePercent(row);
+                              if (!val) return '';
+                              return val.endsWith('%') ? val : `${val}%`;
+                            })()}
+                            placeholder="מועתק אוטומטית"
                             className="w-full px-1.5 py-1.5 rounded border border-amber-300 text-xs text-center font-black text-amber-950 bg-amber-100/70 cursor-not-allowed select-none focus:outline-none"
                           />
                           <Lock className="w-2.5 h-2.5 text-amber-700 absolute left-1 top-2.5 opacity-50 pointer-events-none" />
