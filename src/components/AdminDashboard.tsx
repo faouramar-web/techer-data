@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   TeacherSubmission, 
   calculateRowEligiblePercent,
+  parseBonusNumber,
   FormRow,
   COMMON_SUBJECTS,
   EMPTY_ROW,
@@ -810,9 +811,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, adminE
 
                       {/* Count & sample */}
                       <td className="p-3.5">
-                        <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-sky-100 text-sky-800">
-                          {activeCount} שאלונים
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-sky-100 text-sky-800">
+                            {activeCount} שאלונים
+                          </span>
+                          {sub.rows.some((r) => (
+                            parseBonusNumber(r.externalExamBonus) > 2 ||
+                            parseBonusNumber(r.schoolExamBonus) > 2 ||
+                            parseBonusNumber(r.projectBonus) > 2
+                          )) && (
+                            <span 
+                              className="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 text-[10px] font-bold border border-rose-300 animate-pulse"
+                              title="קיים שאלון עם גמול מעל 2% שהוזן בטעות - לחץ על כפתור העריכה (עפרון) כדי לתקן"
+                            >
+                              ⚠️ נדרש תיקון גמול {'>'}2%
+                            </span>
+                          )}
+                        </div>
                         <div className="text-[11px] text-gray-500 mt-0.5 truncate max-w-[200px]">
                           {sub.rows
                             .filter((r) => r.subject)
@@ -1318,10 +1333,10 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, adminE
                         <th className="p-2.5 w-20 text-center">תלמידים</th>
                         <th className="p-2.5 w-16 text-center">יח"ל</th>
                         <th className="p-2.5 w-16 text-center">מתוך</th>
-                        <th className="p-2.5 w-20 text-center">בחינה 70%</th>
-                        <th className="p-2.5 w-20 text-center">בחינה 30%</th>
-                        <th className="p-2.5 w-20 text-center">פרויקט %</th>
-                        <th className="p-2.5 w-20 text-center font-black">זכאי %</th>
+                        <th className="p-2.5 w-24 text-center">בחינה 70% (עד 2%)</th>
+                        <th className="p-2.5 w-24 text-center">בחינה 30% (עד 2%)</th>
+                        <th className="p-2.5 w-24 text-center">פרויקט (עד 2%)</th>
+                        <th className="p-2.5 w-24 text-center font-black bg-amber-50 text-amber-950">זכאי % (מחושב)</th>
                         <th className="p-2.5 w-12 text-center">מחיקה</th>
                       </tr>
                     </thead>
@@ -1394,42 +1409,94 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, adminE
                           </td>
                           {/* 70% */}
                           <td className="p-2">
-                            <input
-                              type="text"
-                              value={row.externalExamBonus}
-                              onChange={(e) => handleAdminRowChange(idx, 'externalExamBonus', e.target.value)}
-                              className="w-full px-1 py-1.5 border rounded text-center text-xs"
-                              placeholder="%"
-                            />
+                            {(() => {
+                              const isHigh = parseBonusNumber(row.externalExamBonus) > 2;
+                              return (
+                                <div>
+                                  <input
+                                    type="text"
+                                    value={row.externalExamBonus}
+                                    onChange={(e) => handleAdminRowChange(idx, 'externalExamBonus', e.target.value)}
+                                    className={`w-full px-1 py-1.5 border rounded text-center text-xs ${
+                                      isHigh
+                                        ? 'border-rose-400 bg-rose-50 text-rose-900 font-bold ring-1 ring-rose-400'
+                                        : 'border-gray-300'
+                                    }`}
+                                    placeholder="עד 2%"
+                                    title={isHigh ? 'חריגה מעל 2% שהוזנה בטעות - יש לתקן' : 'גמול ב-%'}
+                                  />
+                                  {isHigh && (
+                                    <span className="block text-[9px] text-rose-600 font-bold text-center mt-0.5">
+                                      {'>'}2% לתקן
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </td>
                           {/* 30% */}
                           <td className="p-2">
-                            <input
-                              type="text"
-                              value={row.schoolExamBonus}
-                              onChange={(e) => handleAdminRowChange(idx, 'schoolExamBonus', e.target.value)}
-                              className="w-full px-1 py-1.5 border rounded text-center text-xs"
-                              placeholder="%"
-                            />
+                            {(() => {
+                              const isHigh = parseBonusNumber(row.schoolExamBonus) > 2;
+                              return (
+                                <div>
+                                  <input
+                                    type="text"
+                                    value={row.schoolExamBonus}
+                                    onChange={(e) => handleAdminRowChange(idx, 'schoolExamBonus', e.target.value)}
+                                    className={`w-full px-1 py-1.5 border rounded text-center text-xs ${
+                                      isHigh
+                                        ? 'border-rose-400 bg-rose-50 text-rose-900 font-bold ring-1 ring-rose-400'
+                                        : 'border-gray-300'
+                                    }`}
+                                    placeholder="עד 2%"
+                                    title={isHigh ? 'חריגה מעל 2% שהוזנה בטעות - יש לתקן' : 'גמול ב-%'}
+                                  />
+                                  {isHigh && (
+                                    <span className="block text-[9px] text-rose-600 font-bold text-center mt-0.5">
+                                      {'>'}2% לתקן
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </td>
                           {/* Project */}
                           <td className="p-2">
-                            <input
-                              type="text"
-                              value={row.projectBonus}
-                              onChange={(e) => handleAdminRowChange(idx, 'projectBonus', e.target.value)}
-                              className="w-full px-1 py-1.5 border rounded text-center text-xs"
-                              placeholder="%"
-                            />
+                            {(() => {
+                              const isHigh = parseBonusNumber(row.projectBonus) > 2;
+                              return (
+                                <div>
+                                  <input
+                                    type="text"
+                                    value={row.projectBonus}
+                                    onChange={(e) => handleAdminRowChange(idx, 'projectBonus', e.target.value)}
+                                    className={`w-full px-1 py-1.5 border rounded text-center text-xs ${
+                                      isHigh
+                                        ? 'border-rose-400 bg-rose-50 text-rose-900 font-bold ring-1 ring-rose-400'
+                                        : 'border-gray-300'
+                                    }`}
+                                    placeholder="עד 2%"
+                                    title={isHigh ? 'חריגה מעל 2% שהוזנה בטעות - יש לתקן' : 'גמול ב-%'}
+                                  />
+                                  {isHigh && (
+                                    <span className="block text-[9px] text-rose-600 font-bold text-center mt-0.5">
+                                      {'>'}2% לתקן
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </td>
                           {/* Eligible Percent */}
-                          <td className="p-2 text-center font-bold text-sky-900 bg-sky-50/50">
+                          <td className="p-2 text-center font-bold text-amber-950 bg-amber-50/70">
                             <input
                               type="text"
                               value={row.eligibleBonusPercent}
                               onChange={(e) => handleAdminRowChange(idx, 'eligibleBonusPercent', e.target.value)}
-                              className="w-full px-1 py-1.5 border rounded text-center text-xs font-bold"
-                              placeholder="%"
+                              className="w-full px-1 py-1.5 border border-amber-300 rounded text-center text-xs font-black bg-white"
+                              placeholder="אוטומטי"
+                              title="מחושב אוטומטית לפי שלושת העמודות והיחידות"
                             />
                           </td>
                           {/* Remove button */}

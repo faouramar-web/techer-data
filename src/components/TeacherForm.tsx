@@ -117,8 +117,22 @@ export const TeacherForm: React.FC = () => {
     return sum + val;
   }, 0);
 
+  // Check if any row violates the 2% maximum limit for bonus columns
+  const hasAnyExceededBonus = rows.some((r) => {
+    return (
+      parseBonusNumber(r.externalExamBonus) > 2 ||
+      parseBonusNumber(r.schoolExamBonus) > 2 ||
+      parseBonusNumber(r.projectBonus) > 2
+    );
+  });
+
   // Auto-calculate eligible bonus % across external exam, school exam, project, and units
   const handleRowChange = (index: number, field: keyof FormRow, value: string) => {
+    // Strictly prevent manual alteration of eligibleBonusPercent - always auto-calculated
+    if (field === 'eligibleBonusPercent') {
+      return;
+    }
+
     setRows((prev) => {
       const updated = [...prev];
       const target = { ...updated[index], [field]: value };
@@ -366,15 +380,45 @@ export const TeacherForm: React.FC = () => {
       return;
     }
 
+    // Strict validation: No bonus column can exceed 2%
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const hasContent = r.subject.trim() || r.questionnaireCode.trim() || r.externalExamBonus.trim() || r.schoolExamBonus.trim() || r.projectBonus.trim();
+      if (!hasContent) continue;
+
+      const ext = parseBonusNumber(r.externalExamBonus);
+      const sch = parseBonusNumber(r.schoolExamBonus);
+      const prj = parseBonusNumber(r.projectBonus);
+
+      if (ext > 2) {
+        setErrorMsg(`⚠️ שגיאה בשורה ${r.rowNum} (${r.subject || 'שאלון'}): ערך בחינה חיצונית (${r.externalExamBonus}) עולה על 2%! אחוז גמול הכנה לבגרות לשאלון אינו יכול לעלות על 2%. אין להזין את משקל השאלון (כגון 70%), אלא את אחוז הגמול בשכר עד 2% בלבד.`);
+        return;
+      }
+      if (sch > 2) {
+        setErrorMsg(`⚠️ שגיאה בשורה ${r.rowNum} (${r.subject || 'שאלון'}): ערך בחינה בית ספרית (${r.schoolExamBonus}) עולה על 2%! אחוז גמול הכנה לבגרות לשאלון אינו יכול לעלות על 2%. אין להזין את משקל השאלון (כגון 30%), אלא את אחוז הגמול בשכר עד 2% בלבד.`);
+        return;
+      }
+      if (prj > 2) {
+        setErrorMsg(`⚠️ שגיאה בשורה ${r.rowNum} (${r.subject || 'שאלון'}): ערך פרויקט (${r.projectBonus}) עולה על 2%! אחוז גמול הכנה לבגרות אינו יכול לעלות על 2%. נא לתקן.`);
+        return;
+      }
+    }
+
     setIsSubmitting(true);
     try {
+      // Ensure eligibleBonusPercent is strictly auto-calculated and accurate
+      const sanitizedRows: FormRow[] = rows.map((r) => ({
+        ...r,
+        eligibleBonusPercent: calculateRowEligiblePercent(r),
+      }));
+
       const submissionPayload: Omit<TeacherSubmission, 'id'> = {
         teacherName: teacherName.trim(),
         teacherId: teacherId.trim(),
         secretPin: secretPin.trim(),
         submissionDate,
         schoolYear,
-        rows,
+        rows: sanitizedRows,
         teacherSignature: teacherSignature.trim() || teacherName.trim(),
         status: 'submitted',
         createdBy: '',
@@ -986,6 +1030,24 @@ export const TeacherForm: React.FC = () => {
               </div>
             </div>
 
+            {/* Guidance banner for 2% limit and auto-calculation */}
+            <div className="mb-4 bg-amber-50/90 border-r-4 border-amber-500 rounded-xl p-3.5 text-xs text-amber-950 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold text-amber-950 text-sm">הנחיות חשובות להזנת אחוזי הגמול:</div>
+                  <div className="text-amber-900 mt-1 space-y-1">
+                    <div>
+                      • <strong>שלושת עמודי הגמול</strong> (חיצונית 70%, בית ספרית 30%, פרויקט): יש להזין את <strong>אחוז הגמול בשכר בלבד – עד 2% לכל היותר לשאלון</strong> (לדוגמה: 1.4% או 0.6%). <u>אין להזין את משקל השאלון כגון 70% או 30%</u>!
+                    </div>
+                    <div>
+                      • <strong>עמודת "זכאי לגמול %"</strong>: מחושבת <strong>אוטומטית בלבד</strong> לפי הנתונים והיחידות – השדה נעול להזנה ידנית למניעת שגיאות.
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             {/* Responsive Table Form */}
             <div className="overflow-x-auto -mx-4 md:mx-0">
               <table className="w-full min-w-[950px] border-collapse text-right text-xs">
@@ -1008,7 +1070,8 @@ export const TeacherForm: React.FC = () => {
                     </th>
                     {/* Super header */}
                     <th colSpan={3} className="p-1 border border-gray-300 text-center bg-sky-50 font-bold text-sky-950">
-                      גמולי הכנה לבגרות
+                      <div>גמולי הכנה לבגרות</div>
+                      <div className="text-[10px] text-sky-700 font-semibold">(עד 2% לכל היותר לשאלון)</div>
                     </th>
                     <th rowSpan={2} className="p-2 border border-gray-300 min-w-[85px] text-center">
                       מספר יח"ל
@@ -1016,22 +1079,26 @@ export const TeacherForm: React.FC = () => {
                     <th rowSpan={2} className="p-2 border border-gray-300 min-w-[65px] text-center">
                       מתוך
                     </th>
-                    <th rowSpan={2} className="p-2 border border-gray-300 min-w-[85px] text-center bg-amber-50/80 font-bold text-amber-950">
-                      זכאי לגמול %
+                    <th rowSpan={2} className="p-2 border border-gray-300 min-w-[95px] text-center bg-amber-100/90 font-bold text-amber-950">
+                      <div>זכאי לגמול %</div>
+                      <div className="text-[10px] text-amber-800 font-semibold mt-0.5">🔒 חישוב אוטומטי</div>
                     </th>
                     <th rowSpan={2} className="p-2 border border-gray-300 text-center w-10">
                       פעולות
                     </th>
                   </tr>
                   <tr className="bg-sky-50/70 border-b border-gray-300 text-[11px]">
-                    <th className="p-1 border border-gray-300 text-center">
-                      בחינה חיצונית 70%
+                    <th className="p-1.5 border border-gray-300 text-center">
+                      <div className="font-bold text-sky-950">בחינה חיצונית 70%</div>
+                      <div className="text-[10px] text-sky-700 font-normal">גמול ב-% (עד 2%)</div>
                     </th>
-                    <th className="p-1 border border-gray-300 text-center">
-                      בחינה בית ספרית 30%
+                    <th className="p-1.5 border border-gray-300 text-center">
+                      <div className="font-bold text-sky-950">בחינה בית ספרית 30%</div>
+                      <div className="text-[10px] text-sky-700 font-normal">גמול ב-% (עד 2%)</div>
                     </th>
-                    <th className="p-1 border border-gray-300 text-center">
-                      פרויקט
+                    <th className="p-1.5 border border-gray-300 text-center">
+                      <div className="font-bold text-sky-950">פרויקט</div>
+                      <div className="text-[10px] text-sky-700 font-normal">גמול ב-% (עד 2%)</div>
                     </th>
                   </tr>
                 </thead>
@@ -1111,41 +1178,95 @@ export const TeacherForm: React.FC = () => {
 
                       {/* External Exam 70% Bonus */}
                       <td className="p-1 border border-gray-200">
-                        <input
-                          type="text"
-                          value={row.externalExamBonus}
-                          onChange={(e) =>
-                            handleRowChange(idx, 'externalExamBonus', e.target.value)
-                          }
-                          placeholder="%"
-                          className="w-full px-1.5 py-1.5 rounded border border-gray-300 text-xs text-center focus:ring-1 focus:ring-sky-500 bg-white"
-                        />
+                        {(() => {
+                          const val = parseBonusNumber(row.externalExamBonus);
+                          const isExceeded = val > 2;
+                          return (
+                            <div>
+                              <input
+                                type="text"
+                                value={row.externalExamBonus}
+                                onChange={(e) =>
+                                  handleRowChange(idx, 'externalExamBonus', e.target.value)
+                                }
+                                placeholder="עד 2%"
+                                title={isExceeded ? 'שגיאה: אחוז הגמול אינו יכול לעלות על 2%!' : 'אחוז גמול לבחינה חיצונית (עד 2% לכל היותר)'}
+                                className={`w-full px-1.5 py-1.5 rounded border text-xs text-center transition ${
+                                  isExceeded
+                                    ? 'border-rose-500 bg-rose-50 text-rose-900 font-bold ring-2 ring-rose-400'
+                                    : 'border-gray-300 focus:ring-1 focus:ring-sky-500 bg-white'
+                                }`}
+                              />
+                              {isExceeded && (
+                                <span className="block text-[10px] font-bold text-rose-700 bg-rose-100 rounded px-1 py-0.5 mt-0.5 text-center whitespace-nowrap animate-pulse">
+                                  ⚠️ מקסימום 2%!
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* School Exam 30% Bonus */}
                       <td className="p-1 border border-gray-200">
-                        <input
-                          type="text"
-                          value={row.schoolExamBonus}
-                          onChange={(e) =>
-                            handleRowChange(idx, 'schoolExamBonus', e.target.value)
-                          }
-                          placeholder="%"
-                          className="w-full px-1.5 py-1.5 rounded border border-gray-300 text-xs text-center focus:ring-1 focus:ring-sky-500 bg-white"
-                        />
+                        {(() => {
+                          const val = parseBonusNumber(row.schoolExamBonus);
+                          const isExceeded = val > 2;
+                          return (
+                            <div>
+                              <input
+                                type="text"
+                                value={row.schoolExamBonus}
+                                onChange={(e) =>
+                                  handleRowChange(idx, 'schoolExamBonus', e.target.value)
+                                }
+                                placeholder="עד 2%"
+                                title={isExceeded ? 'שגיאה: אחוז הגמול אינו יכול לעלות על 2%!' : 'אחוז גמול לבחינה בית ספרית (עד 2% לכל היותר)'}
+                                className={`w-full px-1.5 py-1.5 rounded border text-xs text-center transition ${
+                                  isExceeded
+                                    ? 'border-rose-500 bg-rose-50 text-rose-900 font-bold ring-2 ring-rose-400'
+                                    : 'border-gray-300 focus:ring-1 focus:ring-sky-500 bg-white'
+                                }`}
+                              />
+                              {isExceeded && (
+                                <span className="block text-[10px] font-bold text-rose-700 bg-rose-100 rounded px-1 py-0.5 mt-0.5 text-center whitespace-nowrap animate-pulse">
+                                  ⚠️ מקסימום 2%!
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* Project Bonus */}
                       <td className="p-1 border border-gray-200">
-                        <input
-                          type="text"
-                          value={row.projectBonus}
-                          onChange={(e) =>
-                            handleRowChange(idx, 'projectBonus', e.target.value)
-                          }
-                          placeholder="%"
-                          className="w-full px-1.5 py-1.5 rounded border border-gray-300 text-xs text-center focus:ring-1 focus:ring-sky-500 bg-white"
-                        />
+                        {(() => {
+                          const val = parseBonusNumber(row.projectBonus);
+                          const isExceeded = val > 2;
+                          return (
+                            <div>
+                              <input
+                                type="text"
+                                value={row.projectBonus}
+                                onChange={(e) =>
+                                  handleRowChange(idx, 'projectBonus', e.target.value)
+                                }
+                                placeholder="עד 2%"
+                                title={isExceeded ? 'שגיאה: אחוז הגמול אינו יכול לעלות על 2%!' : 'אחוז גמול לפרויקט (עד 2% לכל היותר)'}
+                                className={`w-full px-1.5 py-1.5 rounded border text-xs text-center transition ${
+                                  isExceeded
+                                    ? 'border-rose-500 bg-rose-50 text-rose-900 font-bold ring-2 ring-rose-400'
+                                    : 'border-gray-300 focus:ring-1 focus:ring-sky-500 bg-white'
+                                }`}
+                              />
+                              {isExceeded && (
+                                <span className="block text-[10px] font-bold text-rose-700 bg-rose-100 rounded px-1 py-0.5 mt-0.5 text-center whitespace-nowrap animate-pulse">
+                                  ⚠️ מקסימום 2%!
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </td>
 
                       {/* Units count */}
@@ -1174,17 +1295,19 @@ export const TeacherForm: React.FC = () => {
                         />
                       </td>
 
-                      {/* Eligible Bonus % */}
-                      <td className="p-1 border border-gray-200 bg-amber-50/50">
-                        <input
-                          type="text"
-                          value={row.eligibleBonusPercent}
-                          onChange={(e) =>
-                            handleRowChange(idx, 'eligibleBonusPercent', e.target.value)
-                          }
-                          placeholder="%"
-                          className="w-full px-1.5 py-1.5 rounded border border-amber-300 text-xs text-center font-bold text-gray-900 focus:ring-1 focus:ring-amber-500 bg-white"
-                        />
+                      {/* Eligible Bonus % (READ ONLY - STRICT AUTO CALCULATION) */}
+                      <td className="p-1 border border-gray-200 bg-amber-50/70" title="שדה זה מחושב אוטומטית לפי שלושת עמודי הגמול ויחידות הלימוד (נעול להזנה ידנית)">
+                        <div className="relative">
+                          <input
+                            type="text"
+                            readOnly
+                            tabIndex={-1}
+                            value={row.eligibleBonusPercent ? `${row.eligibleBonusPercent}%` : ''}
+                            placeholder="חישוב אוטומטי"
+                            className="w-full px-1.5 py-1.5 rounded border border-amber-300 text-xs text-center font-black text-amber-950 bg-amber-100/70 cursor-not-allowed select-none focus:outline-none"
+                          />
+                          <Lock className="w-2.5 h-2.5 text-amber-700 absolute left-1 top-2.5 opacity-50 pointer-events-none" />
+                        </div>
                       </td>
 
                       {/* Delete / remove row action */}
@@ -1441,6 +1564,16 @@ export const TeacherForm: React.FC = () => {
               </div>
             </div>
           </div>
+
+          {/* Bottom warning if bonus exceeds 2% */}
+          {hasAnyExceededBonus && (
+            <div className="bg-rose-50 border-r-4 border-rose-500 p-4 rounded-xl flex items-center gap-3 text-rose-900 shadow-xs animate-shake">
+              <AlertCircle className="w-6 h-6 shrink-0 text-rose-600" />
+              <div className="text-xs md:text-sm font-bold">
+                ⚠️ שימו לב: אחד או יותר מנתוני הגמול שהוזנו בטבלה עולים על 2%! גמול הכנה לבגרות לשאלון מוגבל לעד 2% בלבד לשאלון (אין להזין את משקל השאלון 70% או 30%, אלא את אחוז הגמול בשכר בלבד). נא לתקן את הערכים המסומנים באדום כדי לאפשר שליחה.
+              </div>
+            </div>
+          )}
 
           {/* Action Footer */}
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-4">
