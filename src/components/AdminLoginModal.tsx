@@ -44,8 +44,8 @@ export const AdminLoginModal: React.FC<AdminLoginModalProps> = ({
   const handlePinSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
-    // User requested password: 160525
-    const validPins = ['160525', '800136'];
+    // Updated secret admin PIN set by Amar Faour (old 160525 removed)
+    const validPins = ['2611'];
     if (validPins.includes(pinCode.trim())) {
       onSuccess('admin@maghar.k12.il');
     } else {
