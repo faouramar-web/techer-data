@@ -109,7 +109,6 @@ export const CopyrightNoticeModal: React.FC<CopyrightNoticeModalProps> = ({ isOp
             <div>
               <div className="font-extrabold text-gray-900 text-sm">עמאר פאעור | Amar Faour</div>
               <div className="text-gray-500">יוצר, מתכנת ובעל זכויות היוצרים הבלעדי</div>
-              <div className="text-sky-800 font-mono text-[11px] mt-0.5">faouramar@gmail.com</div>
             </div>
             <div className="text-left sm:text-right font-medium text-gray-500">
               <div>תיכון מקיף א' ע"ש קאסם גאנם מע'אר</div>

@@ -56,7 +56,7 @@ export default function App() {
 
   const handleAdminSuccess = (email?: string) => {
     setIsAdminLoggedIn(true);
-    setAdminEmail(email || 'faouramar@gmail.com');
+    setAdminEmail(email || 'מורשה שכר');
     sessionStorage.setItem('maghar_admin_authenticated', 'true');
     setIsLoginModalOpen(false);
     setCurrentView('admin');
