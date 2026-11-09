@@ -31,6 +31,18 @@ export interface TeacherSubmission {
   notes?: string;
 }
 
+export interface SystemSettings {
+  isFormLocked: boolean;
+  lockReason?: string;
+  lockedAt?: string;
+  lockedBy?: string;
+}
+
+export const DEFAULT_SYSTEM_SETTINGS: SystemSettings = {
+  isFormLocked: false,
+  lockReason: 'קבלת הטפסים לשנת לימודים זו הסתיימה. הטפסים המרוכזים כבר נחתמו והועברו לעיריית מע\'אר על ידי מחלקת השכר.',
+};
+
 export const EMPTY_ROW: Omit<FormRow, 'rowNum'> = {
   subject: '',
   gradeGroup: '',

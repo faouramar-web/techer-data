@@ -6,10 +6,12 @@ import {
   EMPTY_ROW, 
   SCHOOL_YEARS,
   calculateRowEligiblePercent,
-  parseBonusNumber
+  parseBonusNumber,
+  SystemSettings,
+  DEFAULT_SYSTEM_SETTINGS
 } from '../types';
 import { validateIsraeliId } from '../lib/idValidator';
-import { createSubmission, updateSubmission, findSubmissionsByTeacherId } from '../lib/firebase';
+import { createSubmission, updateSubmission, findSubmissionsByTeacherId, subscribeToSystemSettings } from '../lib/firebase';
 import { OfficialDocumentView } from './OfficialDocumentView';
 import { generateWordDocx } from '../lib/generateDocx';
 import { 
@@ -60,6 +62,16 @@ export const TeacherForm: React.FC = () => {
   const [lookupResults, setLookupResults] = useState<TeacherSubmission[] | null>(null);
   const [lookupMessage, setLookupMessage] = useState<string | null>(null);
   const [pinError, setPinError] = useState<string | null>(null);
+
+  // Real-time system settings (Form lock state)
+  const [systemSettings, setSystemSettings] = useState<SystemSettings>(DEFAULT_SYSTEM_SETTINGS);
+
+  useEffect(() => {
+    const unsubscribe = subscribeToSystemSettings((settings) => {
+      setSystemSettings(settings);
+    });
+    return () => unsubscribe();
+  }, []);
 
   // Canvas ref for drawing signature on mobile touchscreens and desktop
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -355,6 +367,11 @@ export const TeacherForm: React.FC = () => {
     e.preventDefault();
     setErrorMsg(null);
 
+    if (systemSettings.isFormLocked) {
+      setErrorMsg('⚠️ קבלת הטפסים לשנת לימודים זו ננעלה ונסגרה לאחר העברת הטפסים לעיריית מע\'אר. לא ניתן להגיש או לעדכן טפסים חדשים.');
+      return;
+    }
+
     if (!teacherName.trim()) {
       setErrorMsg('יש להזין שם מלא (שם פרטי ושם משפחה)');
       return;
@@ -605,6 +622,36 @@ export const TeacherForm: React.FC = () => {
         </div>
       </div>
 
+      {/* Lock Notification Banner when submissions are locked by Admin */}
+      {systemSettings.isFormLocked && (
+        <div className="no-print mb-8 p-5 md:p-6 bg-gradient-to-l from-rose-50 via-red-50 to-rose-100 border-2 border-rose-400 rounded-2xl shadow-md text-rose-950 animate-in fade-in duration-200">
+          <div className="flex items-start gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-rose-600 text-white flex items-center justify-center shrink-0 shadow-sm mt-0.5 animate-pulse">
+              <Lock className="w-6 h-6 stroke-[2.5]" />
+            </div>
+            <div className="space-y-2 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="bg-rose-200 text-rose-950 border border-rose-300 text-xs font-black px-3 py-1 rounded-full shadow-2xs flex items-center gap-1.5">
+                  <ShieldAlert className="w-3.5 h-3.5 text-rose-700" />
+                  הודעה רשמית: קבלת הטפסים לשנת לימודים זו נסגרה וננעלה
+                </span>
+                {systemSettings.lockedAt && (
+                  <span className="text-xs text-rose-800 font-semibold font-mono">
+                    תאריך סגירה: {new Date(systemSettings.lockedAt).toLocaleDateString('he-IL')}
+                  </span>
+                )}
+              </div>
+              <p className="text-sm md:text-base font-extrabold text-rose-950 leading-relaxed">
+                {systemSettings.lockReason || DEFAULT_SYSTEM_SETTINGS.lockReason}
+              </p>
+              <div className="text-xs text-rose-900 bg-white/80 border border-rose-200 rounded-xl p-3 font-medium leading-relaxed">
+                ℹ️ <strong>למורים שהגישו כבר טופס:</strong> באפשרותכם להזין למטה את מספר תעודת הזהות והקוד האישי הסודי לצפייה, להורדת עותק Word ולהדפסת הטופס שלכם בכל עת. לא ניתן להגיש טפסים חדשים או לעדכן נתונים.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Lookup / Edit existing submission section - DIRECTLY VISIBLE FOR TEACHERS */}
       <div id="teacher-lookup-section" className="no-print mb-8 scroll-mt-20">
         {editingSubmissionId ? (
@@ -796,9 +843,56 @@ export const TeacherForm: React.FC = () => {
                         </div>
 
                         {isApproved ? (
-                          <div className="p-3 bg-emerald-100/70 border border-emerald-300 rounded-xl text-emerald-950 text-xs font-bold flex items-center gap-2">
-                            <Lock className="w-4 h-4 text-emerald-700 shrink-0" />
-                            <span>הטופס נבדק ואושר סופית ע"י ההנהלה ונעול לעריכה</span>
+                          <div className="flex flex-col sm:flex-row items-center gap-2">
+                            <div className="p-2.5 bg-emerald-100/70 border border-emerald-300 rounded-xl text-emerald-950 text-xs font-bold flex items-center gap-2">
+                              <Lock className="w-4 h-4 text-emerald-700 shrink-0" />
+                              <span>הטופס נבדק ואושר סופית ע"י ההנהלה ונעול לעריכה</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSubmittedData(res);
+                                setActiveTab('preview');
+                              }}
+                              className="px-4 py-2.5 bg-sky-700 hover:bg-sky-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
+                            >
+                              <Eye className="w-4 h-4" />
+                              צפה והדפס
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadWord(res)}
+                              className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
+                            >
+                              <Download className="w-4 h-4" />
+                              הורד Word
+                            </button>
+                          </div>
+                        ) : systemSettings.isFormLocked ? (
+                          <div className="flex flex-col sm:flex-row items-center gap-2">
+                            <div className="p-2.5 bg-rose-100/80 border border-rose-300 rounded-xl text-rose-950 text-xs font-bold flex items-center gap-1.5">
+                              <Lock className="w-4 h-4 text-rose-700 shrink-0" />
+                              <span>הטופס הועבר לעירייה ונעול לעריכה</span>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSubmittedData(res);
+                                setActiveTab('preview');
+                              }}
+                              className="px-4 py-2.5 bg-sky-700 hover:bg-sky-800 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
+                            >
+                              <Eye className="w-4 h-4" />
+                              צפה והדפס טופס
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDownloadWord(res)}
+                              className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
+                            >
+                              <Download className="w-4 h-4" />
+                              Word
+                            </button>
                           </div>
                         ) : (
                           <button
@@ -862,6 +956,15 @@ export const TeacherForm: React.FC = () => {
       ) : (
         <>
           <form onSubmit={handleSubmit} className="space-y-8 no-print">
+          {systemSettings.isFormLocked && (
+            <div className="bg-rose-50 border-2 border-rose-400 p-4 rounded-xl flex items-center gap-3 text-rose-950 font-bold shadow-xs animate-shake">
+              <Lock className="w-6 h-6 shrink-0 text-rose-600" />
+              <div className="text-xs md:text-sm leading-relaxed">
+                🔒 <strong>שימו לב:</strong> קבלת הטפסים לשנת לימודים זו נסגרה וננעלה על ידי ההנהלה ומחלקת השכר (הטפסים הועברו לעירייה). שדות הטופס נעולים להזנה חדשה. מורים שהגישו כבר יכולים לאתר את הטופס שלהם למעלה לצפייה ולהדפסה.
+              </div>
+            </div>
+          )}
+
           {errorMsg && (
             <div className="bg-rose-50 border-r-4 border-rose-500 p-4 rounded-xl flex items-center gap-3 text-rose-800 animate-shake">
               <AlertCircle className="w-6 h-6 shrink-0 text-rose-600" />
@@ -1603,14 +1706,22 @@ export const TeacherForm: React.FC = () => {
 
             <button
               type="submit"
-              disabled={isSubmitting}
+              disabled={isSubmitting || systemSettings.isFormLocked}
+              title={systemSettings.isFormLocked ? 'הטופס ננעל ע"י ההנהלה לאחר העברה לעירייה' : undefined}
               className={`w-full sm:w-auto px-10 py-4 ${
-                editingSubmissionId
-                  ? 'bg-amber-600 hover:bg-amber-700'
-                  : 'bg-emerald-600 hover:bg-emerald-700'
-              } disabled:bg-gray-400 text-white font-extrabold text-base rounded-xl shadow-lg hover:shadow-xl transition transform active:scale-98 flex items-center justify-center gap-3 cursor-pointer`}
+                systemSettings.isFormLocked
+                  ? 'bg-gray-400 opacity-90 cursor-not-allowed shadow-none'
+                  : editingSubmissionId
+                  ? 'bg-amber-600 hover:bg-amber-700 cursor-pointer shadow-lg hover:shadow-xl'
+                  : 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer shadow-lg hover:shadow-xl'
+              } disabled:bg-gray-400 text-white font-extrabold text-base rounded-xl transition transform active:scale-98 flex items-center justify-center gap-3`}
             >
-              {isSubmitting ? (
+              {systemSettings.isFormLocked ? (
+                <>
+                  <Lock className="w-5 h-5 text-gray-200" />
+                  <span>🔒 קבלת טפסים ננעלה (הועבר לעירייה)</span>
+                </>
+              ) : isSubmitting ? (
                 <>
                   <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   {editingSubmissionId ? 'מעדכן שינויים בענן...' : 'שומר בענן ושולח...'}

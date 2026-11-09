@@ -35,5 +35,11 @@ service cloud.firestore {
       allow update: if isValidId(submissionId);
       allow delete: if isValidId(submissionId);
     }
+
+    match /settings/{settingId} {
+      // System configuration and form submission lock state
+      allow get, list: if true;
+      allow write: if isValidId(settingId);
+    }
   }
 }

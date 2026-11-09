@@ -18,13 +18,14 @@ import {
   getDoc,
   updateDoc,
   deleteDoc,
+  setDoc,
   query,
   orderBy,
   where,
   onSnapshot
 } from 'firebase/firestore';
 import firebaseConfig from '../../firebase-applet-config.json';
-import { TeacherSubmission } from '../types';
+import { TeacherSubmission, SystemSettings, DEFAULT_SYSTEM_SETTINGS } from '../types';
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId); /* CRITICAL: The app will break without this line */
@@ -537,6 +538,97 @@ export async function deleteSubmission(id: string): Promise<void> {
       handleFirestoreError(error, OperationType.DELETE, path);
     } catch {
       // Local copy was already deleted
+    }
+  }
+}
+
+// System Settings Management (Locking/Unlocking Form for Teachers)
+const LOCAL_SETTINGS_KEY = 'maghar_system_settings_cache';
+
+export function getLocalSystemSettings(): SystemSettings {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return DEFAULT_SYSTEM_SETTINGS;
+    const raw = localStorage.getItem(LOCAL_SETTINGS_KEY);
+    return raw ? { ...DEFAULT_SYSTEM_SETTINGS, ...JSON.parse(raw) } : DEFAULT_SYSTEM_SETTINGS;
+  } catch (e) {
+    console.warn('Failed to read local settings:', e);
+    return DEFAULT_SYSTEM_SETTINGS;
+  }
+}
+
+export function saveLocalSystemSettings(settings: SystemSettings): void {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return;
+    localStorage.setItem(LOCAL_SETTINGS_KEY, JSON.stringify(settings));
+  } catch (e) {
+    console.warn('Failed to save local settings:', e);
+  }
+}
+
+export async function getSystemSettings(): Promise<SystemSettings> {
+  const path = 'settings/app_config';
+  try {
+    const docSnap = await getDoc(doc(db, 'settings', 'app_config'));
+    if (docSnap.exists()) {
+      const data = { ...DEFAULT_SYSTEM_SETTINGS, ...(docSnap.data() as Partial<SystemSettings>) };
+      saveLocalSystemSettings(data);
+      return data;
+    }
+  } catch (error) {
+    console.warn('Firestore get settings failed, falling back to local cache:', error);
+  }
+  return getLocalSystemSettings();
+}
+
+export function subscribeToSystemSettings(
+  onUpdate: (settings: SystemSettings) => void,
+  onError?: (err: any) => void
+): () => void {
+  const path = 'settings/app_config';
+  // Immediate invocation with local cache
+  onUpdate(getLocalSystemSettings());
+
+  return onSnapshot(
+    doc(db, 'settings', 'app_config'),
+    (snapshot) => {
+      if (snapshot.exists()) {
+        const data = { ...DEFAULT_SYSTEM_SETTINGS, ...(snapshot.data() as Partial<SystemSettings>) };
+        saveLocalSystemSettings(data);
+        onUpdate(data);
+      } else {
+        const defaults = getLocalSystemSettings();
+        onUpdate(defaults);
+      }
+    },
+    (error) => {
+      console.warn('Real-time settings listener warning:', error);
+      if (onError) onError(error);
+      onUpdate(getLocalSystemSettings());
+    }
+  );
+}
+
+export async function updateSystemSettings(
+  newSettings: Partial<SystemSettings>
+): Promise<void> {
+  const path = 'settings/app_config';
+  const current = getLocalSystemSettings();
+  const merged: SystemSettings = {
+    ...current,
+    ...newSettings,
+  };
+
+  // Save locally first
+  saveLocalSystemSettings(merged);
+
+  try {
+    await setDoc(doc(db, 'settings', 'app_config'), merged, { merge: true });
+  } catch (error) {
+    console.warn('Firestore update settings warning:', error);
+    try {
+      handleFirestoreError(error, OperationType.UPDATE, path);
+    } catch {
+      // Local copy was updated
     }
   }
 }

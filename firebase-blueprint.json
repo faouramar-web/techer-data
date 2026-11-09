@@ -87,6 +87,33 @@
         }
       },
       "required": ["email", "role"]
+    },
+    "SystemSettings": {
+      "title": "SystemSettings",
+      "description": "Global application configuration including form submission locking status",
+      "type": "object",
+      "properties": {
+        "isFormLocked": {
+          "type": "boolean",
+          "description": "Whether teacher form submissions are currently locked"
+        },
+        "lockReason": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Reason shown to teachers when the form is locked"
+        },
+        "lockedAt": {
+          "type": "string",
+          "maxLength": 50,
+          "description": "Timestamp when the lock was activated"
+        },
+        "lockedBy": {
+          "type": "string",
+          "maxLength": 100,
+          "description": "Name or email of the admin who locked the form"
+        }
+      },
+      "required": ["isFormLocked"]
     }
   },
   "firestore": {
@@ -97,6 +124,10 @@
     "/admins/{adminId}": {
       "schema": "AdminUser",
       "description": "Collection of authorized administrators"
+    },
+    "/settings/{settingId}": {
+      "schema": "SystemSettings",
+      "description": "System settings and configuration parameters"
     }
   }
 }

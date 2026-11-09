@@ -6,7 +6,9 @@ import {
   FormRow,
   COMMON_SUBJECTS,
   EMPTY_ROW,
-  SCHOOL_YEARS
+  SCHOOL_YEARS,
+  SystemSettings,
+  DEFAULT_SYSTEM_SETTINGS
 } from '../types';
 import { 
   getAllSubmissions, 
@@ -14,7 +16,9 @@ import {
   updateSubmissionApproval, 
   updateSubmissionSignature,
   updateSubmission,
-  deleteSubmission 
+  deleteSubmission,
+  subscribeToSystemSettings,
+  updateSystemSettings
 } from '../lib/firebase';
 import { OfficialDocumentView } from './OfficialDocumentView';
 import { generateWordDocx } from '../lib/generateDocx';
@@ -47,7 +51,9 @@ import {
   Save,
   Plus,
   Lock,
-  Key
+  Unlock,
+  Key,
+  ShieldAlert
 } from 'lucide-react';
 
 interface AdminDashboardProps {
@@ -81,6 +87,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, adminE
   // Batch auto-fix for all submissions' eligible bonus percentage
   const [isFixingAllSubmissions, setIsFixingAllSubmissions] = useState(false);
   const [fixSuccessMessage, setFixSuccessMessage] = useState<string | null>(null);
+
+  // System Settings: Form Submission Lock state
+  const [systemSettings, setSystemSettings] = useState<SystemSettings>(DEFAULT_SYSTEM_SETTINGS);
+  const [isTogglingLock, setIsTogglingLock] = useState(false);
+  const [showLockReasonModal, setShowLockReasonModal] = useState(false);
+  const [customLockReason, setCustomLockReason] = useState(DEFAULT_SYSTEM_SETTINGS.lockReason || '');
 
   // Quick PIN modal state
   const [pinModalSub, setPinModalSub] = useState<TeacherSubmission | null>(null);
@@ -318,7 +330,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, adminE
     loadSubmissions();
 
     // Attach real-time Firestore listener for all mobile & desktop submissions
-    const unsubscribe = subscribeToSubmissions(
+    const unsubscribeSubmissions = subscribeToSubmissions(
       (updatedList) => {
         setSubmissions(updatedList);
         setIsLoading(false);
@@ -330,10 +342,37 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, adminE
       }
     );
 
+    // Attach real-time listener for system settings (Form lock state)
+    const unsubscribeSettings = subscribeToSystemSettings((settings) => {
+      setSystemSettings(settings);
+      if (settings.lockReason) {
+        setCustomLockReason(settings.lockReason);
+      }
+    });
+
     return () => {
-      if (unsubscribe) unsubscribe();
+      if (unsubscribeSubmissions) unsubscribeSubmissions();
+      if (unsubscribeSettings) unsubscribeSettings();
     };
   }, []);
+
+  const handleToggleFormLock = async (newLockState: boolean, reason?: string) => {
+    setIsTogglingLock(true);
+    try {
+      await updateSystemSettings({
+        isFormLocked: newLockState,
+        lockReason: reason || customLockReason || DEFAULT_SYSTEM_SETTINGS.lockReason,
+        lockedAt: newLockState ? new Date().toISOString() : undefined,
+        lockedBy: newLockState ? (adminEmail || 'עמאר פאעור') : undefined,
+      });
+      setShowLockReasonModal(false);
+    } catch (err) {
+      console.error('Failed to update form lock state:', err);
+      alert('אירעה שגיאה בעדכון מצב נעילת הטופס');
+    } finally {
+      setIsTogglingLock(false);
+    }
+  };
 
   // Filtered submissions
   const filteredSubmissions = submissions.filter((sub) => {
@@ -620,6 +659,81 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, adminE
           >
             יציאה מניהול
           </button>
+        </div>
+      </div>
+
+      {/* Form Submission Lock Control Card */}
+      <div className={`p-5 rounded-2xl border mb-8 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all ${
+        systemSettings.isFormLocked
+          ? 'bg-rose-50/90 border-rose-300 ring-1 ring-rose-200'
+          : 'bg-emerald-50/80 border-emerald-300'
+      }`}>
+        <div className="flex items-start md:items-center gap-3.5">
+          <div className={`w-12 h-12 rounded-xl flex items-center justify-center shrink-0 shadow-sm ${
+            systemSettings.isFormLocked
+              ? 'bg-rose-600 text-white animate-pulse'
+              : 'bg-emerald-600 text-white'
+          }`}>
+            {systemSettings.isFormLocked ? (
+              <Lock className="w-6 h-6 stroke-[2.5]" />
+            ) : (
+              <Unlock className="w-6 h-6 stroke-[2.5]" />
+            )}
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className={`text-xs font-black px-2.5 py-0.5 rounded-full ${
+                systemSettings.isFormLocked
+                  ? 'bg-rose-200 text-rose-950 border border-rose-400'
+                  : 'bg-emerald-200 text-emerald-950 border border-emerald-400'
+              }`}>
+                {systemSettings.isFormLocked ? '🔒 קבלת טפסים נעולה כעת (הגשות נחסמו)' : '🟢 קבלת טפסים פתוחה מהמורים'}
+              </span>
+              <span className="font-extrabold text-sm md:text-base text-gray-900">
+                {systemSettings.isFormLocked ? 'הטופס נסגר להגשה לאחר הגשה לעירייה' : 'מורים יכולים למלא ולהגיש טפסים חדשים'}
+              </span>
+            </div>
+            <p className="text-xs text-gray-700 mt-1 max-w-2xl leading-relaxed font-medium">
+              {systemSettings.isFormLocked
+                ? `המורים אינם יכולים להגיש או לערוך טפסים. מוצגת להם הודעה רשמית שהטפסים כבר הועברו לעיריית מע'אר על ידי מחלקת השכר. (מורים עדיין יכולים לאתר, לצפות ולהדפיס את הטופס שלהם עם ת.ז וקוד אישי).`
+                : 'אם סיימתם לאסוף את כל הטפסים והעברתם אותם לעירייה, תוכלו לנעול את הטופס בלחיצת כפתור אחת כדי למנוע ממורים להוסיף או לשנות נתונים.'}
+            </p>
+            {systemSettings.isFormLocked && systemSettings.lockedAt && (
+              <div className="text-[11px] text-rose-800 font-semibold mt-1 flex items-center gap-1.5">
+                <span>ננעל בתאריך:</span>
+                <span className="font-mono">{new Date(systemSettings.lockedAt).toLocaleDateString('he-IL')}</span>
+                {systemSettings.lockedBy && <span>על ידי: {systemSettings.lockedBy}</span>}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 shrink-0">
+          {systemSettings.isFormLocked ? (
+            <button
+              type="button"
+              disabled={isTogglingLock}
+              onClick={() => {
+                if (window.confirm('האם לפתוח מחדש את קבלת הטפסים למורים? מורים יוכלו שוב למלא ולהגיש טפסים.')) {
+                  handleToggleFormLock(false);
+                }
+              }}
+              className="w-full md:w-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-2 shadow-sm transition cursor-pointer"
+            >
+              <Unlock className="w-4 h-4" />
+              <span>{isTogglingLock ? 'מעדכן בענן...' : 'פתח טופס למילוי מחדש'}</span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={isTogglingLock}
+              onClick={() => setShowLockReasonModal(true)}
+              className="w-full md:w-auto px-5 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-2 shadow-sm transition cursor-pointer"
+            >
+              <Lock className="w-4 h-4" />
+              <span>{isTogglingLock ? 'מעדכן בענן...' : 'נעל את הטופס למילוי (הוגש לעירייה)'}</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -1688,6 +1802,68 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, adminE
                 className="px-6 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
               >
                 {isSavingPin ? 'שומר בענן...' : 'שמור קוד למורה'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal for Confirming Form Lock */}
+      {showLockReasonModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-gray-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 text-rose-600 mb-3">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 flex items-center justify-center">
+                <Lock className="w-5 h-5 stroke-[2.5]" />
+              </div>
+              <div>
+                <h3 className="text-base font-extrabold text-gray-900">נעילת טופס הגשת גמולי בגרות</h3>
+                <p className="text-xs text-gray-500">חסימת מורים ממילוי או עריכת טפסים חדשים</p>
+              </div>
+            </div>
+
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 mb-4 text-xs text-amber-900 leading-relaxed font-medium">
+              💡 <strong>לתשומת לבך:</strong> לאחר הנעילה, מורים לא יוכלו להגיש טפסים חדשים או לעדכן נתונים.
+              עם זאת, מורים שהגישו כבר עדיין יוכלו <strong>לצפות ולהדפיס</strong> את הטופס שלהם באמצעות תעודת זהות והקוד האישי הסודי.
+            </div>
+
+            <div className="mb-4">
+              <label className="block text-xs font-bold text-gray-700 mb-1.5">
+                הודעה שתוצג למורים בטופס:
+              </label>
+              <textarea
+                rows={3}
+                value={customLockReason}
+                onChange={(e) => setCustomLockReason(e.target.value)}
+                placeholder="הודעה שתוצג למורים בראש הטופס..."
+                className="w-full px-3 py-2 border border-gray-300 rounded-xl text-xs text-gray-800 focus:outline-none focus:ring-2 focus:ring-rose-500 font-medium"
+              />
+              <button
+                type="button"
+                onClick={() => setCustomLockReason(DEFAULT_SYSTEM_SETTINGS.lockReason || '')}
+                className="text-[11px] text-sky-600 hover:text-sky-800 underline mt-1 font-semibold cursor-pointer"
+              >
+                שחזר הודעת ברירת מחדל רשמית
+              </button>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-gray-100">
+              <button
+                type="button"
+                disabled={isTogglingLock}
+                onClick={() => setShowLockReasonModal(false)}
+                className="px-4 py-2.5 border border-gray-300 rounded-xl text-xs font-semibold text-gray-600 hover:bg-gray-100 transition cursor-pointer"
+              >
+                ביטול
+              </button>
+              <button
+                type="button"
+                disabled={isTogglingLock}
+                onClick={() => handleToggleFormLock(true, customLockReason)}
+                className="px-6 py-2.5 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <Lock className="w-4 h-4" />
+                <span>{isTogglingLock ? 'נועל בענן...' : 'אשר נעילה וסגור את הטופס למורים'}</span>
               </button>
             </div>
           </div>
