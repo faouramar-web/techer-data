@@ -613,22 +613,35 @@ export async function updateSystemSettings(
 ): Promise<void> {
   const path = 'settings/app_config';
   const current = getLocalSystemSettings();
-  const merged: SystemSettings = {
-    ...current,
-    ...newSettings,
+  
+  const isLocked = Boolean(newSettings.isFormLocked);
+
+  // Firestore strictly forbids `undefined` field values.
+  const firestoreData: Record<string, any> = {
+    isFormLocked: isLocked,
+    lockReason: isLocked ? (newSettings.lockReason || current.lockReason || DEFAULT_SYSTEM_SETTINGS.lockReason || '') : '',
+    lockedAt: isLocked ? (newSettings.lockedAt || current.lockedAt || new Date().toISOString()) : '',
+    lockedBy: isLocked ? (newSettings.lockedBy || current.lockedBy || 'מורשה שכר') : '',
   };
 
-  // Save locally first
-  saveLocalSystemSettings(merged);
+  const localSettings: SystemSettings = {
+    isFormLocked: isLocked,
+    lockReason: isLocked ? firestoreData.lockReason : undefined,
+    lockedAt: isLocked ? firestoreData.lockedAt : undefined,
+    lockedBy: isLocked ? firestoreData.lockedBy : undefined,
+  };
+
+  // Save locally first for instant UI response
+  saveLocalSystemSettings(localSettings);
 
   try {
-    await setDoc(doc(db, 'settings', 'app_config'), merged, { merge: true });
+    await setDoc(doc(db, 'settings', 'app_config'), firestoreData);
   } catch (error) {
-    console.warn('Firestore update settings warning:', error);
+    console.error('Firestore update settings failed:', error);
     try {
       handleFirestoreError(error, OperationType.UPDATE, path);
     } catch {
-      // Local copy was updated
+      // Local copy was already updated
     }
   }
 }

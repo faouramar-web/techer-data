@@ -92,7 +92,9 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, adminE
   const [systemSettings, setSystemSettings] = useState<SystemSettings>(DEFAULT_SYSTEM_SETTINGS);
   const [isTogglingLock, setIsTogglingLock] = useState(false);
   const [showLockReasonModal, setShowLockReasonModal] = useState(false);
+  const [showUnlockConfirmModal, setShowUnlockConfirmModal] = useState(false);
   const [customLockReason, setCustomLockReason] = useState(DEFAULT_SYSTEM_SETTINGS.lockReason || '');
+  const [lockSuccessMessage, setLockSuccessMessage] = useState<string | null>(null);
 
   // Quick PIN modal state
   const [pinModalSub, setPinModalSub] = useState<TeacherSubmission | null>(null);
@@ -361,11 +363,18 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, adminE
     try {
       await updateSystemSettings({
         isFormLocked: newLockState,
-        lockReason: reason || customLockReason || DEFAULT_SYSTEM_SETTINGS.lockReason,
-        lockedAt: newLockState ? new Date().toISOString() : undefined,
-        lockedBy: newLockState ? (adminEmail || 'עמאר פאעור') : undefined,
+        lockReason: newLockState ? (reason || customLockReason || DEFAULT_SYSTEM_SETTINGS.lockReason) : '',
+        lockedAt: newLockState ? new Date().toISOString() : '',
+        lockedBy: newLockState ? (adminEmail || 'מורשה שכר') : '',
       });
       setShowLockReasonModal(false);
+      setShowUnlockConfirmModal(false);
+
+      const msg = newLockState
+        ? '🔒 הטופס ננעל בהצלחה! מורים אינם יכולים להגיש טפסים חדשים.'
+        : '🟢 הטופס נפתח בהצלחה למילוי מחדש! מורים יכולים שוב למלא ולהגיש טפסים.';
+      setLockSuccessMessage(msg);
+      setTimeout(() => setLockSuccessMessage(null), 7000);
     } catch (err) {
       console.error('Failed to update form lock state:', err);
       alert('אירעה שגיאה בעדכון מצב נעילת הטופס');
@@ -662,6 +671,23 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, adminE
         </div>
       </div>
 
+      {/* Success Notification Banner for lock/unlock */}
+      {lockSuccessMessage && (
+        <div className="mb-4 p-4 rounded-xl bg-emerald-100 border-2 border-emerald-400 text-emerald-950 font-extrabold text-sm flex items-center justify-between gap-3 shadow-md animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="w-5 h-5 text-emerald-700 shrink-0" />
+            <span>{lockSuccessMessage}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setLockSuccessMessage(null)}
+            className="text-emerald-800 hover:text-emerald-950 p-1 cursor-pointer"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Form Submission Lock Control Card */}
       <div className={`p-5 rounded-2xl border mb-8 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 transition-all ${
         systemSettings.isFormLocked
@@ -713,15 +739,11 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, adminE
             <button
               type="button"
               disabled={isTogglingLock}
-              onClick={() => {
-                if (window.confirm('האם לפתוח מחדש את קבלת הטפסים למורים? מורים יוכלו שוב למלא ולהגיש טפסים.')) {
-                  handleToggleFormLock(false);
-                }
-              }}
+              onClick={() => setShowUnlockConfirmModal(true)}
               className="w-full md:w-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs md:text-sm font-bold flex items-center justify-center gap-2 shadow-sm transition cursor-pointer"
             >
               <Unlock className="w-4 h-4" />
-              <span>{isTogglingLock ? 'מעדכן בענן...' : 'פתח טופס למילוי מחדש'}</span>
+              <span>{isTogglingLock ? 'פותח בענן...' : 'פתח טופס למילוי מחדש'}</span>
             </button>
           ) : (
             <button
@@ -1864,6 +1886,47 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onLogout, adminE
               >
                 <Lock className="w-4 h-4" />
                 <span>{isTogglingLock ? 'נועל בענן...' : 'אשר נעילה וסגור את הטופס למורים'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal for Confirming Form Unlock */}
+      {showUnlockConfirmModal && (
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-gray-200 animate-in fade-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3 text-emerald-600 mb-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center">
+                <Unlock className="w-5 h-5 stroke-[2.5]" />
+              </div>
+              <div>
+                <h3 className="text-base font-extrabold text-gray-900">פתיחת טופס הגשת גמולים למורים</h3>
+                <p className="text-xs text-gray-500">ביטול הנעילה ואישור קבלת טפסים חדשים</p>
+              </div>
+            </div>
+
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 mb-4 text-xs text-emerald-950 leading-relaxed font-medium">
+              💡 <strong>לתשומת לבך:</strong> פתיחת הטופס תאפשר למורים למלא שוב טפסים חדשים, לעדכן שאלונים ולהגיש תביעות גמול בגרות.
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-3 border-t border-gray-100">
+              <button
+                type="button"
+                disabled={isTogglingLock}
+                onClick={() => setShowUnlockConfirmModal(false)}
+                className="px-4 py-2.5 border border-gray-300 rounded-xl text-xs font-semibold text-gray-600 hover:bg-gray-100 transition cursor-pointer"
+              >
+                ביטול
+              </button>
+              <button
+                type="button"
+                disabled={isTogglingLock}
+                onClick={() => handleToggleFormLock(false)}
+                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <Unlock className="w-4 h-4" />
+                <span>{isTogglingLock ? 'פותח בענן...' : 'אשר פתיחה – פתח טופס למורים'}</span>
               </button>
             </div>
           </div>
